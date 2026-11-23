@@ -30,7 +30,7 @@
 </form>
 <p id="trend-filter-status" class="note" role="status"></p>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
-<div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div><p class="note" id="coverage"></p>
+<div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
 <div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th id="post-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
@@ -214,7 +214,6 @@ function draw() {
     charts.push(interactionChart(post.title,[post],trend,metricName,postMax));
   }
   $('plot').replaceChildren(...charts);
-  $('coverage').textContent=charts.some(chart=>chart.querySelector('svg'))?'每帖取该时段最后一次采集的累计读数。':'';
 }
 function postName(post) {
   const title=post.title?.trim();
