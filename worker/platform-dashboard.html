@@ -31,7 +31,6 @@
 <p id="trend-filter-status" class="note" role="status"></p>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
 <div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div><p class="note" id="coverage"></p>
-<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段</th><th>帖子</th><th id="trend-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="trend-saves-column">收藏数</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
 <div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th id="post-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
@@ -194,9 +193,7 @@ function draw() {
     if(selected.has(post.id))series.set(post.id,{title:postName(post),publishedAt:post.published_at,
       color:seriesColors[series.size%seriesColors.length],points:[]});
   }
-  const table=[];
   let postMax=1;
-  const keys=Object.keys(names);
   for(const [index,period] of trend.entries()){
     for(const item of period.readings){
       const post=series.get(item.id);
@@ -206,7 +203,6 @@ function draw() {
         post.points.push({index,value:metricValue});
         postMax=Math.max(postMax,metricValue);
       }
-      table.push([time(period.start),post.title,...keys.map(key=>format(item[key]))]);
     }
   }
   const metricName=names[metric];
@@ -218,11 +214,7 @@ function draw() {
     charts.push(interactionChart(post.title,[post],trend,metricName,postMax));
   }
   $('plot').replaceChildren(...charts);
-  $('trend-details').hidden=!table.length;
-  $('trend-saves-column').hidden=!Object.hasOwn(names,'saves');
-  $('trend-views-column').hidden=!Object.hasOwn(names,'impressions');
-  rows($('period-table'),table.reverse(),2+keys.length,'暂无时段数据');
-  $('coverage').textContent=table.length?'每帖取该时段最后一次采集的累计读数。':'';
+  $('coverage').textContent=charts.some(chart=>chart.querySelector('svg'))?'每帖取该时段最后一次采集的累计读数。':'';
 }
 function postName(post) {
   const title=post.title?.trim();
