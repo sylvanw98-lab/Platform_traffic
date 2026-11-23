@@ -287,17 +287,15 @@ async function dashboard(env, query) {
   const selected = new Set(query.getAll('post'));
   const publishedFrom = parseDay(query.get('publishedFrom'));
   const publishedTo = parseDay(query.get('publishedTo'));
-  if (platform && ((query.has('publishedFrom') && !Number.isFinite(publishedFrom)) ||
-      (query.has('publishedTo') && !Number.isFinite(publishedTo)) || publishedFrom > publishedTo)) {
-    return json({ error: '请选择有效的帖子发布日期范围' }, 400);
+  const hasDateFilter = platform && (query.has('publishedFrom') || query.has('publishedTo'));
+  if (hasDateFilter && (!Number.isFinite(publishedFrom) || !Number.isFinite(publishedTo) || publishedFrom > publishedTo)) {
+    return json({ error: '请选择有效的开始和结束发布日期' }, 400);
   }
-  const hasDateFilter = Number.isFinite(publishedFrom) || Number.isFinite(publishedTo);
   const hasPostFilter = selected.size > 0 || hasDateFilter;
   const matchingPosts = posts.filter(post =>
     (!selected.size || selected.has(post.id)) &&
     (!hasDateFilter || post.published_at != null &&
-      (!Number.isFinite(publishedFrom) || post.published_at >= publishedFrom) &&
-      (!Number.isFinite(publishedTo) || post.published_at < publishedTo + 24 * hourMs)));
+      post.published_at >= publishedFrom && post.published_at < publishedTo + 24 * hourMs));
   const trendFilter = hasPostFilter ? filter + ' AND p.id IN (SELECT value FROM json_each(?))' : filter;
   const trendArgs = hasPostFilter ? [...args, JSON.stringify(matchingPosts.map(post=>post.id))] : args;
   const trend = platform
