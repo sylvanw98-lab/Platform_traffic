@@ -36,7 +36,7 @@
 <div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div><p class="note" id="coverage"></p>
 <details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段</th><th>帖子</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="trend-saves-column">收藏数</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
-<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>发布时间</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
@@ -284,10 +284,10 @@ function render() {
       const url=new URL(post.url);
       if(url.protocol==='https:'||url.protocol==='http:') window.open(url.href,'_blank','noopener,noreferrer');
     };
-    return [link,post.platform,post.account||'—',time(post.published_at,localWithSeconds),
+    return [link,post.platform,time(post.published_at,localWithSeconds),
       ...Object.keys(labels).map(key=>format(post[key])),...(showSaves ? [format(post.saves)] : []),
       post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
-  }),showSaves ? 10 : 9,'暂无符合筛选条件的帖子');
+  }),showSaves ? 9 : 8,'暂无符合筛选条件的帖子');
   draw();
 }
 async function load() {
