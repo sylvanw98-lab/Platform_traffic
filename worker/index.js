@@ -354,7 +354,7 @@ async function dashboard(env, query) {
   for (let i = 0; i < windows.length; i += 30) {
     const batch = windows.slice(i, i + 30);
     const rows = batch.map(() => '(?,?)').join(',');
-    const select = metrics.map(metric => `sum(b.${metric}-a.${metric}) AS ${metric},
+    const select = [...metrics, 'saves'].map(metric => `sum(b.${metric}-a.${metric}) AS ${metric},
       count(b.${metric}-a.${metric}) AS ${metric}_coverage`).join(',');
     const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
       SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
