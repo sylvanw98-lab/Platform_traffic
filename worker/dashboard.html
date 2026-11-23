@@ -27,7 +27,7 @@
 const $ = id => document.getElementById(id);
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
-const trendMetrics = {percent:'粉丝涨幅',growth:'粉丝增值'};
+const trendMetrics = {percent:'粉丝涨幅',followers:'粉丝数量'};
 const colors = {X:'#17694f',Instagram:'#a43e74',TikTok:'#4165b6'};
 const fmt = new Intl.NumberFormat('zh-CN');
 const pct = new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2,style:'percent'});
@@ -103,17 +103,38 @@ function tickIndices(length,width) {
 function trendValue(value) {
   return trendMetric==='percent'?pct.format(value/100):fmt.format(value);
 }
+function followerCountTable(points) {
+  const details=element('details');
+  details.open=true;
+  details.append(element('summary','各时段粉丝数量'));
+  const wrap=element('div',null,'table-wrap');
+  const table=element('table');
+  const heading=table.createTHead().insertRow();
+  for(const label of ['时段','账号','粉丝数量']) heading.append(element('th',label));
+  const body=table.createTBody();
+  for(const point of points.slice().reverse()){
+    const row=body.insertRow();
+    for(const value of [periodLabel(point.start),'@'+point.handle,fmt.format(point.followers)]) row.insertCell().textContent=value;
+  }
+  wrap.append(table);
+  details.append(wrap);
+  return details;
+}
 function drawChart(name,trend,observations,high,low) {
   const card=element('article',null,'follower-chart');
   card.append(element('h3',name));
-  const recent=observations.at(-1);
-  if(recent){
-    const rate=recent.percent==null?'—':pct.format(recent.percent/100);
-    card.append(element('p','最近时段净增 '+fmt.format(recent.growth)+' 位 · 涨幅 '+rate,'note'));
+  const showCounts=trendMetric==='followers';
+  const latest=observations.filter(point=>point[showCounts?'followers':'growth']!=null).at(-1);
+  if(latest){
+    const rate=latest.percent==null?'—':pct.format(latest.percent/100);
+    const summary=showCounts?'最近采集 '+fmt.format(latest.followers)+' 位粉丝'
+      :'最近时段净增 '+fmt.format(latest.growth)+' 位 · 涨幅 '+rate;
+    card.append(element('p',summary,'note'));
   }
   const points=observations.filter(point=>point[trendMetric]!=null);
   if(!points.length){
-    card.append(element('p',recent&&trendMetric==='percent'?'期初粉丝数为 0，无法计算百分比':'暂无可计算的粉丝变化','empty'));
+    const message=showCounts?'暂无粉丝数量记录':latest?'期初粉丝数为 0，无法计算百分比':'暂无可计算的粉丝变化';
+    card.append(element('p',message,'empty'));
     return card;
   }
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -132,7 +153,8 @@ function drawChart(name,trend,observations,high,low) {
   }
   const y=value=>12+(high-value)*108/(high-low);
   const x=index=>left+(index+.5)*plotWidth/Math.max(trend.length,1);
-  for(const value of [low,0,high]){
+  const grid=showCounts?[...new Set([0,Math.floor(high/2),high])]:[low,0,high];
+  for(const value of grid){
     node('line',{x1:left,x2:right,y1:y(value),y2:y(value),class:'grid'});
     node('text',{x:left-6,y:y(value)+4,'text-anchor':'end'},trendValue(value));
   }
@@ -142,7 +164,8 @@ function drawChart(name,trend,observations,high,low) {
     const bar=node('rect',{x:x(point.index)-width/2,y:Math.min(y(value),y(0)),width,
       height:Math.max(2,Math.abs(y(value)-y(0))),fill:colors[name]});
     const percent=point.percent==null?'—':pct.format(point.percent/100);
-    node('title',{},periodLabel(point.start)+' · @'+point.handle+' · '+fmt.format(point.growth)+' 位 · 涨幅 '+percent,bar);
+    const valueLabel=showCounts?fmt.format(point.followers)+' 位粉丝':fmt.format(point.growth)+' 位 · 涨幅 '+percent;
+    node('title',{},periodLabel(point.start)+' · @'+point.handle+' · '+valueLabel,bar);
   }
   for(const index of tickIndices(trend.length,plotWidth)){
     const anchor=index===0?'start':index===trend.length-1?'end':'middle';
@@ -150,21 +173,24 @@ function drawChart(name,trend,observations,high,low) {
     node('text',{x:x(index),y:144,'text-anchor':anchor},axisLabel(trend[index].start));
   }
   card.append(svg);
+  if(showCounts)card.append(followerCountTable(points));
   return card;
 }
 function draw() {
   const trend=data.trend;
   const points=trend.flatMap((period,index)=>period.accounts
-    .filter(account=>account.growth!=null).map(account=>({...account,index,start:period.start})));
+    .filter(account=>account.followers!=null||account.growth!=null).map(account=>({...account,index,start:period.start})));
   const values=points.map(point=>point[trendMetric]).filter(value=>value!=null);
   const high=Math.max(1,...values);
-  const low=Math.min(-1,...values);
+  const low=trendMetric==='followers'?0:Math.min(-1,...values);
   switches($('trend-tabs'),trendMetrics,trendMetric,key=>{trendMetric=key;draw();});
   $('follower-charts').replaceChildren(...Object.keys(colors).map(name=>
     drawChart(name,trend,points.filter(point=>point.platform===name),high,low)));
   $('period-table').replaceChildren();
-  $('trend-details').hidden=!points.length;
-  for(const point of points.slice().reverse()){
+  const growthPoints=points.filter(point=>point.growth!=null);
+  $('trend-details').hidden=trendMetric==='followers'||!growthPoints.length;
+  if(trendMetric==='followers')return;
+  for(const point of growthPoints.slice().reverse()){
     const row=$('period-table').insertRow();
     for(const value of [periodLabel(point.start),point.platform+' · @'+point.handle,fmt.format(point.growth),
       point.percent==null?'—':pct.format(point.percent/100)])row.insertCell().textContent=value;

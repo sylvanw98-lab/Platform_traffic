@@ -314,7 +314,7 @@ async function followerTrend(db, profiles, windows, start, end) {
     const { results } = await db.prepare(`WITH history AS (
       SELECT captured_at,followers,lag(followers) OVER (ORDER BY captured_at) AS previous
       FROM profile_snapshots WHERE platform=? AND handle=? AND captured_at<?
-    ) SELECT captured_at,followers,previous FROM history WHERE captured_at>=? AND previous IS NOT NULL ORDER BY captured_at`)
+    ) SELECT captured_at,followers,previous FROM history WHERE captured_at>=? ORDER BY captured_at`)
       .bind(platform, handle.toLowerCase(), end, start).all();
     return results;
   }));
@@ -322,11 +322,12 @@ async function followerTrend(db, profiles, windows, start, end) {
   return windows.map(window => ({ ...window, accounts: profiles.map(({ platform, handle }, index) => {
     const events = history[index];
     const first = events[cursors[index]];
-    if (!first || first.captured_at >= window.end) return { platform, handle, growth: null, percent: null };
+    if (!first || first.captured_at >= window.end) return { platform, handle, followers: null, growth: null, percent: null };
     let last = first;
     while (events[cursors[index]]?.captured_at < window.end) last = events[cursors[index]++];
-    const growth = last.followers - first.previous;
-    return { platform, handle, growth, percent: first.previous > 0 ? growth / first.previous * 100 : null };
+    const baseline = first.previous ?? (first !== last ? first.followers : null);
+    const growth = baseline == null ? null : last.followers - baseline;
+    return { platform, handle, followers: last.followers, growth, percent: baseline > 0 ? growth / baseline * 100 : null };
   }) }));
 }
 function profileCount(value) {
