@@ -334,8 +334,8 @@ async function dashboard(db, query) {
   const filter = 'p.active=1 AND EXISTS (SELECT 1 FROM settings WHERE key=\'run\' AND json_extract(value,\'$.syncAt\') IS NOT NULL) AND (?=\'\' OR p.platform=?) AND (?=\'\' OR p.account=?)';
   const args = [platform, platform, account, account];
   const [{ results: posts }, { results: options }, run] = await Promise.all([
-    db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.captured_at FROM posts p LEFT JOIN snapshots s
-      ON s.post_id=p.id AND s.hour=(SELECT max(t.hour) FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? AND t.source='api')
+    db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
+      ON s.post_id=p.id AND s.hour=(SELECT t.hour FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? ORDER BY t.hour DESC LIMIT 1)
       WHERE ${filter} ORDER BY s.impressions DESC, p.id`).bind(end, ...args).all(),
     db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
     getSetting(db, 'run'),
@@ -358,6 +358,24 @@ async function dashboard(db, query) {
   return json({ posts, options, run, trend, unit, start, end });
 }
 
+async function saveWebSnapshot(request, env) {
+  if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
+    return json({ error: '未授权' }, 403);
+  }
+  const entries = await request.json();
+  if (!Array.isArray(entries) || !entries.length || entries.length > 50 ||
+      entries.some(entry => typeof entry?.id !== 'string' || !entry.id ||
+        metrics.every(metric => count(entry[metric]) == null))) return json({ error: '网页指标格式无效' }, 400);
+  const now = Date.now();
+  const writes = entries.map(entry => env.DB.prepare(`INSERT INTO snapshots
+    (post_id,hour,captured_at,impressions,likes,comments,source)
+    SELECT id,?,?,?,?,?,'web' FROM posts WHERE id=? AND active=1
+    ON CONFLICT(post_id,hour) DO UPDATE SET captured_at=excluded.captured_at,impressions=excluded.impressions,
+      likes=excluded.likes,comments=excluded.comments WHERE snapshots.source='web'`)
+    .bind(hourOf(now), now, ...metrics.map(metric => count(entry[metric])), entry.id));
+  const results = await env.DB.batch(writes);
+  return json({ saved: results.reduce((sum, result) => sum + result.meta.changes, 0) });
+}
 async function mcp(request, env) {
   const rpc = await request.json();
   const reply = (result) => json({ jsonrpc: '2.0', id: rpc.id, result });
@@ -387,6 +405,7 @@ export default {
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env.DB, url.searchParams);
       if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/web-snapshots') return await saveWebSnapshot(request, env);
       if (request.method === 'POST' && url.pathname === '/api/collect') {
         if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) return json({ error: '未授权' }, 403);
         const result = await collect(env);
