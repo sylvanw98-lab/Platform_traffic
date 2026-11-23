@@ -8,6 +8,8 @@
 .trend-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0 8px}.post-picker{position:relative;margin:0;flex:0 1 205px;max-width:100%}.post-picker summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.post-picker-options{position:absolute;z-index:2;top:100%;left:0;min-width:min(450px,80vw);max-height:240px;overflow:auto;background:white;border:1px solid #cbd8ce;border-radius:8px;padding:6px;box-shadow:0 8px 20px #172b2714}.post-picker-options label{display:flex;align-items:center;gap:8px;padding:6px}.post-picker-options input{min-height:0;flex:none}.post-picker-options span{overflow-wrap:anywhere}
 
 .date-range{position:relative;flex:0 1 345px;min-width:min(100%,290px);margin:0}.date-range summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.date-range-fields{position:absolute;z-index:2;top:100%;right:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(335px,calc(100vw - 56px));padding:12px;background:#fff;border:1px solid #cbd8ce;border-radius:8px;box-shadow:0 8px 20px #172b2414}.date-range-fields input{min-width:0;width:100%}@media(max-width:600px){.date-range{flex:1 1 100%}.date-range-fields{left:0;right:auto}}
+
+.post-series{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}.post-series-item{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:min(320px,100%);font-size:.85rem;color:var(--muted)}.post-series-item i{width:9px;height:9px;border-radius:50%;flex:none}.post-series-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -31,8 +33,9 @@
 </form>
 <p id="trend-filter-status" class="note" role="status"></p>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
+<div id="post-series" class="post-series" aria-label="帖子图例"></div>
 <div id="plot"></div><p class="note" id="coverage"></p>
-<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段开始</th><th>净变化</th><th>采集覆盖</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
+<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段</th><th>帖子</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="trend-saves-column">收藏数</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
 <div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
@@ -96,40 +99,84 @@ function options(target, values, label) {
   target.replaceChildren(new Option(label,''),...Array.from(new Set(values.filter(Boolean))).map(value=>new Option(value,value)));
   if([...target.options].some(option=>option.value===previous)) target.value=previous;
 }
+const seriesColors=['#17694f','#a44075','#365dab','#9b5425','#6854a9','#167282','#9b353d','#536623'];
+function trendPeriod(value) {
+  const label=time(value);
+  if(unit==='hour')return label.slice(-5);
+  if(unit==='day')return label.slice(5,10).replace('/','-');
+  if(unit==='month')return label.slice(0,7);
+  return label.slice(0,4);
+}
 function draw() {
   const names=visibleMetrics();
   switches($('legend'),names,metric,key=>{metric=key;draw();});
   const trend=data?.trend||[];
-  const points=trend.map((period,index)=>({index,period,value:period[metric]})).filter(item=>item.value!=null);
-  const plot=$('plot');plot.replaceChildren();
-  $('trend-details').hidden=!trend.length;
-  rows($('period-table'),trend.slice().reverse().map(p=>[time(p.start),format(p[metric]),p[metric+'_coverage']+' / '+p.expected+(p[metric+'_coverage']<p.expected?' · 数据不完整':'')]),3,'暂无时段数据');
-  $('coverage').textContent=trend.length ? '每个趋势点至少需要两次同一来源的采集，变化计入最新一次采集所在的时段。' : '';
-  if(!points.length){plot.append(element('p','暂无可计算的趋势数据','empty'));return;}
+  const series=new Map();
+  const selected=new Set(data?.trendPostIds||[]);
+  for(const post of data?.posts||[]){
+    if(selected.has(post.id))series.set(post.id,{title:postName(post),color:seriesColors[series.size%seriesColors.length],points:[]});
+  }
+  const table=[];
+  const hasSaves=platform==='TikTok';
+  for(const [index,period] of trend.entries()){
+    for(const item of period.readings){
+      const post=series.get(item.id);
+      if(!post)continue;
+      if(item[metric]!=null)post.points.push({index,value:item[metric],capturedAt:item.capturedAt});
+      table.push([time(period.start),post.title,...Object.keys(labels).map(key=>format(item[key])),
+        ...(hasSaves?[format(item.saves)]:[])]);
+    }
+  }
+  $('trend-details').hidden=!table.length;
+  $('trend-saves-column').hidden=!hasSaves;
+  rows($('period-table'),table.reverse(),hasSaves?6:5,'暂无时段数据');
+  $('coverage').textContent=table.length?'每个时段显示该帖最后一次采集到的累计读数。':'';
+  const plot=$('plot');
+  plot.replaceChildren();
+  const active=[...series.values()].filter(post=>post.points.length);
+  $('post-series').replaceChildren(...active.map(post=>{
+    const legend=element('div',null,'post-series-item');
+    const swatch=element('i');swatch.style.backgroundColor=post.color;
+    legend.title=post.title;legend.append(swatch,element('span',post.title));
+    return legend;
+  }));
+  if(!active.length){plot.append(element('p','所选帖子暂无此指标的采集数据','empty'));return;}
   const ns='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(ns,'svg');
   svg.setAttribute('viewBox','0 0 880 235');svg.setAttribute('class','chart');
-  svg.setAttribute('role','img');svg.setAttribute('aria-label',names[metric]+'净变化趋势');
-  const max=Math.max(0,...points.map(p=>p.value)),min=Math.min(0,...points.map(p=>p.value));
-  const y=value=>18+(max-value)*164/(max-min||1), x=index=>63+index*795/Math.max(trend.length-1,1);
+  svg.setAttribute('role','img');svg.setAttribute('aria-label',names[metric]+'分帖趋势');
+  const max=Math.max(1,...active.flatMap(post=>post.points.map(point=>point.value)));
+  const y=value=>18+(max-value)*164/max;
+  const x=index=>63+index*795/Math.max(trend.length-1,1);
   function svgEl(tag,attrs,label) {
     const item=document.createElementNS(ns,tag);
     for(const [key,value] of Object.entries(attrs))item.setAttribute(key,value);
     if(label!=null)item.textContent=label;
     svg.append(item);return item;
   }
-  const ticks=min===max?[0]:Array.from({length:5},(_,i)=>min+(max-min)*i/4);
-  for(const val of ticks){svgEl('line',{x1:63,x2:860,y1:y(val),y2:y(val),class:'grid'});svgEl('text',{x:56,y:y(val)+4,'text-anchor':'end'},fmt.format(Math.round(val)));}
-  let prev;
-  for(const point of points){
-    if(prev?.index===point.index-1)svgEl('line',{x1:x(prev.index),x2:x(point.index),y1:y(prev.value),y2:y(point.value),stroke:'#21805e','stroke-width':2});
-    const dot=svgEl('circle',{cx:x(point.index),cy:y(point.value),r:3,fill:point.period[metric+'_coverage']<point.period.expected?'#ae742d':'#17694f'});
-    const hint=document.createElementNS(ns,'title');hint.textContent=time(point.period.start)+' · '+format(point.value)+' · '+point.period[metric+'_coverage']+'/'+point.period.expected;dot.append(hint);prev=point;
+  for(const value of new Set(Array.from({length:5},(_,i)=>Math.round(max*i/4)))){
+    svgEl('line',{x1:63,x2:860,y1:y(value),y2:y(value),class:'grid'});
+    svgEl('text',{x:56,y:y(value)+4,'text-anchor':'end'},fmt.format(value));
   }
-  const markCount=Math.min(5,trend.length);
-  for(let i=0;i<markCount;i++){
-    const j=Math.round(i*(trend.length-1)/Math.max(markCount-1,1));
-    const label=time(trend[j].start);svgEl('text',{x:x(j),y:211,'text-anchor':i===0?'start':i===markCount-1?'end':'middle'},unit==='hour'?label.slice(5):label.slice(0,10));
+  for(const post of active){
+    let previous;
+    for(const point of post.points){
+      if(previous){
+        const line={x1:x(previous.index),x2:x(point.index),y1:y(previous.value),y2:y(point.value),stroke:post.color,'stroke-width':2};
+        if(point.index-previous.index>1)line['stroke-dasharray']='4 4';
+        svgEl('line',line);
+      }
+      const dot=svgEl('circle',{cx:x(point.index),cy:y(point.value),r:4,fill:post.color,stroke:'#fff','stroke-width':1});
+      const hint=document.createElementNS(ns,'title');
+      hint.textContent=post.title+' · '+time(point.capturedAt)+' · '+names[metric]+' '+format(point.value);
+      dot.append(hint);
+      previous=point;
+    }
+  }
+  const marks=Math.min(5,trend.length);
+  for(let i=0;i<marks;i++){
+    const index=Math.round(i*(trend.length-1)/Math.max(marks-1,1));
+    svgEl('text',{x:x(index),y:211,'text-anchor':i===0?'start':i===marks-1?'end':'middle'},trendPeriod(trend[index].start));
   }
   plot.append(svg);
 }

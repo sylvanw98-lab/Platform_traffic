@@ -316,44 +316,32 @@ async function dashboard(env, query) {
   if (hasDateFilter && (!Number.isFinite(publishedFrom) || !Number.isFinite(publishedTo) || publishedFrom > publishedTo)) {
     return json({ error: '请选择有效的开始和结束发布日期' }, 400);
   }
-  const hasPostFilter = selected.size > 0 || hasDateFilter;
   const matchingPosts = posts.filter(post =>
     (!selected.size || selected.has(post.id)) &&
     (!hasDateFilter || post.published_at != null &&
       post.published_at >= publishedFrom && post.published_at < publishedTo + 24 * hourMs));
-  const trendFilter = hasPostFilter ? filter + ' AND p.id IN (SELECT value FROM json_each(?))' : filter;
-  const trendArgs = hasPostFilter ? [...args, JSON.stringify(matchingPosts.map(post=>post.id))] : args;
   const trend = platform
-    ? await postTrend(db, windows, trendFilter, trendArgs)
+    ? await postTrend(db, windows, matchingPosts.map(post => post.id), start, end)
     : await followerTrend(db, profiles, windows, start, end);
-  return json({ posts, options, run: status, trend, trendPostCount: matchingPosts.length, unit, start, end, modes, profiles, accountFeedAt });
+  return json({ posts, options, run: status, trend, trendPostCount: matchingPosts.length,
+    trendPostIds: platform ? matchingPosts.map(post => post.id) : [], unit, start, end, modes, profiles, accountFeedAt });
 }
 
-async function postTrend(db, windows, filter, args) {
-  const trend = [];
-  for (let i = 0; i < windows.length; i += 30) {
-    const batch = windows.slice(i, i + 30);
-    const rows = batch.map(() => '(?,?)').join(',');
-    const select = [...metrics, 'saves'].map(metric => `sum(b.${metric}-a.${metric}) AS ${metric},
-      count(b.${metric}-a.${metric}) AS ${metric}_coverage`).join(',');
-    const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
-      SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
-      LEFT JOIN posts p ON p.first_hour<w.end AND ${filter}
-      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=(
-        SELECT s.hour FROM snapshots s WHERE s.post_id=p.id AND s.hour>=w.start AND s.hour<w.end
-        AND s.captured_at<w.end ORDER BY s.hour DESC LIMIT 1
-      )
-      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=coalesce(
-        (SELECT s.hour FROM snapshots s WHERE s.post_id=p.id AND s.source=b.source
-          AND s.hour<w.start AND s.captured_at<w.start ORDER BY s.hour DESC LIMIT 1),
-        (SELECT s.hour FROM snapshots s WHERE s.post_id=p.id AND s.source=b.source
-          AND s.hour>=w.start AND s.hour<b.hour ORDER BY s.hour LIMIT 1)
-      )
-      GROUP BY w.start,w.end ORDER BY w.start`)
-      .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
-    trend.push(...results);
+async function postTrend(db, windows, ids, start, end) {
+  const buckets = windows.map(window => ({ ...window, readings: new Map() }));
+  if (buckets.length && ids.length) {
+    const { results } = await db.prepare(`SELECT s.post_id AS id,s.captured_at AS capturedAt,
+      s.impressions,s.likes,s.comments,s.saves FROM snapshots s
+      JOIN json_each(?) selection ON selection.value=s.post_id
+      WHERE s.hour BETWEEN ? AND ? AND s.captured_at>=? AND s.captured_at<?
+      ORDER BY s.captured_at,s.hour`).bind(JSON.stringify(ids), hourOf(start), hourOf(end), start, end).all();
+    let index = 0;
+    for (const reading of results) {
+      while (reading.capturedAt >= buckets[index].end) index++;
+      buckets[index].readings.set(reading.id, reading);
+    }
   }
-  return trend;
+  return buckets.map(bucket => ({ ...bucket, readings: [...bucket.readings.values()] }));
 }
 
 async function followerTrend(db, profiles, windows, start, end) {
