@@ -5,6 +5,8 @@
 .platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .profile-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin-top:14px}.profile{border:1px solid var(--line);border-radius:10px;padding:13px 15px}.profile h3{margin:0 0 11px;font-size:1rem}.profile dl{display:flex;gap:24px;margin:0 0 10px}.profile dt{font-size:.85rem;color:var(--muted)}.profile dd{margin:3px 0 0;font-size:1.35rem;font-weight:700}
 .account-summary{grid-template-columns:minmax(200px,1fr);max-width:380px}
+
+.follower-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,255px),1fr));gap:12px;margin-top:14px}.follower-chart{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}.follower-chart h3{margin:0 0 6px;font-size:1rem}.follower-chart .chart{height:auto;min-height:130px;margin-top:8px}.follower-chart .chart text{font-size:11px}.profile dl{flex-wrap:wrap;gap:10px 20px}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -20,7 +22,7 @@
 <section class="panel" id="profiles"><h2>账号概况</h2><div class="profile-list" id="profile-list"></div></section>
 <section class="panel">
 <div class="panel-head"><h2>粉丝涨幅</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
-<div id="legend" class="legend"></div><div id="plot"></div>
+<div class="follower-charts" id="follower-charts"></div>
 <details id="trend-details"><summary>查看粉丝变化明细</summary><div class="table-wrap"><table>
 <thead><tr><th>时段</th><th>账号</th><th>净增粉丝</th><th>涨幅</th></tr></thead><tbody id="period-table"></tbody>
 </table></div></details>
@@ -67,7 +69,7 @@ function accountOptions(rows) {
   target.replaceChildren(new Option('全部账号',''),...accounts.map(account=>new Option(account,account)));
   if(accounts.includes(selected))target.value=selected;
 }
-function renderProfiles(profiles) {
+function renderProfiles(profiles,posts) {
   const list=$('profile-list');
   if(!profiles.length){list.replaceChildren(element('p','暂无账号数据','note'));return;}
   list.replaceChildren(...profiles.map(profile=>{
@@ -77,9 +79,12 @@ function renderProfiles(profiles) {
     link.href=profile.url;link.target='_blank';link.rel='noopener noreferrer';
     heading.append(link);
     const stats=element('dl');
-    for(const [key,label] of [['followers','粉丝数'],['following','关注数']]){
+    const handle=profile.handle.toLowerCase();
+    const postCount=posts.filter(post=>post.platform===profile.platform &&
+      post.account?.replace(/^@/,'').toLowerCase()===handle).length;
+    for(const [label,value] of [['总发帖数',postCount],['粉丝数',profile.followers],['关注数',profile.following]]){
       const pair=element('div');
-      pair.append(element('dt',label),element('dd',format(profile[key])));
+      pair.append(element('dt',label),element('dd',format(value)));
       stats.append(pair);
     }
     card.append(heading,stats,element('p','最近采集 '+date(profile.capturedAt),'note'));
@@ -93,51 +98,63 @@ function periodLabel(value) {
   if(unit==='year')return label.slice(0,4);
   return label.slice(0,10);
 }
-function draw() {
-  const trend=data.trend;
-  const points=trend.flatMap((period,index)=>period.accounts
-    .filter(account=>account.growth!=null).map(account=>({...account,index,start:period.start})));
-  const plot=$('plot');
-  $('legend').replaceChildren();plot.replaceChildren();$('period-table').replaceChildren();
-  $('trend-details').hidden=!points.length;
-  if(!points.length){plot.append(element('p','同一账号至少需要两次粉丝数采集记录才能计算涨幅。','empty'));return;}
-  const series=[...new Set(points.map(point=>point.platform))];
-  for(const name of series){
-    const label=element('span',name,'note');label.style.color=colors[name];$('legend').append(label);
+function drawChart(name,trend,points,high,low) {
+  const card=element('article',null,'follower-chart');
+  card.append(element('h3',name));
+  if(!points.length){
+    card.append(element('p','暂无可计算的粉丝变化','empty'));
+    return card;
   }
-  for(const point of points.slice().reverse()){
-    const row=$('period-table').insertRow();
-    for(const value of [periodLabel(point.start),point.platform+' · @'+point.handle,fmt.format(point.growth),
-      point.percent==null?'—':pct.format(point.percent/100)])row.insertCell().textContent=value;
-  }
+  const recent=points.at(-1);
+  const rate=recent.percent==null?'—':pct.format(recent.percent/100);
+  card.append(element('p','最近时段净增 '+fmt.format(recent.growth)+' 位 · 涨幅 '+rate,'note'));
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('viewBox','0 0 880 235');svg.setAttribute('class','chart');
-  svg.setAttribute('role','img');svg.setAttribute('aria-label','粉丝净增长趋势');
+  svg.setAttribute('viewBox','0 0 360 160');
+  svg.setAttribute('class','chart');
+  svg.setAttribute('role','img');
+  svg.setAttribute('aria-label',name+'粉丝净增长趋势');
   function node(tag,attrs,text,owner=svg) {
     const item=document.createElementNS(svg.namespaceURI,tag);
     for(const [key,value] of Object.entries(attrs))item.setAttribute(key,value);
     if(text!=null)item.textContent=text;
     owner.append(item);return item;
   }
-  const high=Math.max(1,...points.map(p=>p.growth)), low=Math.min(-1,...points.map(p=>p.growth));
-  const y=value=>18+(high-value)*164/(high-low);
-  const x=index=>62+(index+.5)*795/Math.max(trend.length,1);
-  for(const value of [...new Set([low,0,high])]){
-    node('line',{x1:62,x2:858,y1:y(value),y2:y(value),class:'grid'});
-    node('text',{x:54,y:y(value)+4,'text-anchor':'end'},fmt.format(value));
+  const y=value=>12+(high-value)*108/(high-low);
+  const x=index=>44+(index+.5)*290/Math.max(trend.length,1);
+  for(const value of [low,0,high]){
+    node('line',{x1:44,x2:334,y1:y(value),y2:y(value),class:'grid'});
+    node('text',{x:38,y:y(value)+4,'text-anchor':'end'},fmt.format(value));
   }
-  const width=Math.max(2,Math.min(12,795/trend.length/(series.length+1)));
+  const width=Math.max(2,Math.min(12,290/trend.length*.6));
   for(const point of points){
-    const center=x(point.index)+(series.indexOf(point.platform)-(series.length-1)/2)*width;
-    const bar=node('rect',{x:center-width/2,y:Math.min(y(point.growth),y(0)),width:width-1,height:Math.max(2,Math.abs(y(point.growth)-y(0))),fill:colors[point.platform]});
-    node('title',{},periodLabel(point.start)+' · '+point.platform+' · '+fmt.format(point.growth)+' 位粉丝',bar);
+    const bar=node('rect',{x:x(point.index)-width/2,y:Math.min(y(point.growth),y(0)),width,
+      height:Math.max(2,Math.abs(y(point.growth)-y(0))),fill:colors[name]});
+    const percent=point.percent==null?'—':pct.format(point.percent/100);
+    node('title',{},periodLabel(point.start)+' · @'+point.handle+' · '+fmt.format(point.growth)+' 位 · 涨幅 '+percent,bar);
   }
-  const marks=Math.min(5,trend.length);
+  const marks=Math.min(unit==='hour'?2:3,trend.length);
   for(let i=0;i<marks;i++){
     const index=Math.round(i*(trend.length-1)/Math.max(marks-1,1));
-    node('text',{x:x(index),y:211,'text-anchor':i===0?'start':i===marks-1?'end':'middle'},periodLabel(trend[index].start));
+    node('text',{x:x(index),y:144,'text-anchor':i===0?'start':i===marks-1?'end':'middle'},periodLabel(trend[index].start));
   }
-  plot.append(svg);
+  card.append(svg);
+  return card;
+}
+function draw() {
+  const trend=data.trend;
+  const points=trend.flatMap((period,index)=>period.accounts
+    .filter(account=>account.growth!=null).map(account=>({...account,index,start:period.start})));
+  const high=Math.max(1,...points.map(p=>p.growth));
+  const low=Math.min(-1,...points.map(p=>p.growth));
+  $('follower-charts').replaceChildren(...Object.keys(colors).map(name=>
+    drawChart(name,trend,points.filter(point=>point.platform===name),high,low)));
+  $('period-table').replaceChildren();
+  $('trend-details').hidden=!points.length;
+  for(const point of points.slice().reverse()){
+    const row=$('period-table').insertRow();
+    for(const value of [periodLabel(point.start),point.platform+' · @'+point.handle,fmt.format(point.growth),
+      point.percent==null?'—':pct.format(point.percent/100)])row.insertCell().textContent=value;
+  }
 }
 async function load() {
   const id=++requestId;
@@ -156,7 +173,7 @@ async function load() {
     data=result;
     accountOptions(data.options);
     $('post-total').textContent=fmt.format(data.posts.length);
-    renderProfiles(data.profiles);
+    renderProfiles(data.profiles,data.posts);
     $('last').textContent=data.accountFeedAt?'最近采集 '+date(data.accountFeedAt):'';
     const web=[...new Set(data.profiles.map(p=>p.platform))].filter(p=>data.modes?.[p]==='web');
     $('status').textContent=web.length?web.join('、')+' 使用网页采集':'等待账号采集';
