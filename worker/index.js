@@ -309,21 +309,24 @@ async function dashboard(env, query) {
         options.some(item => item.platform === profile.platform && item.account === account) &&
           allProfiles.filter(item => item.platform === profile.platform).length === 1));
   const selected = new Set(query.getAll('post'));
+  const manuallySelected = selected.size>0 || query.get('postSelection')==='manual';
+  const recentOnly = Boolean(platform && !manuallySelected && query.get('postSelection')==='recent');
   const publishedFrom = parseDay(query.get('publishedFrom'));
   const publishedTo = parseDay(query.get('publishedTo'));
   const hasDateFilter = platform && (query.has('publishedFrom') || query.has('publishedTo'));
   if (hasDateFilter && (!Number.isFinite(publishedFrom) || !Number.isFinite(publishedTo) || publishedFrom > publishedTo)) {
     return json({ error: '请选择有效的开始和结束发布日期' }, 400);
   }
-  const matchingPosts = posts.filter(post =>
-    (!selected.size || selected.has(post.id)) &&
+  const eligiblePosts = posts.filter(post =>
+    (!manuallySelected || selected.has(post.id)) &&
     (!hasDateFilter || post.published_at != null &&
       post.published_at >= publishedFrom && post.published_at < publishedTo + 24 * hourMs));
+  const matchingPosts = recentOnly ? eligiblePosts.filter(post => post.published_at != null).slice(0, 3) : eligiblePosts;
   const trend = platform
     ? await postTrend(db, windows, matchingPosts.map(post => post.id), start, end)
     : await followerTrend(db, profiles, windows, start, end);
   return json({ posts, options, run: status, trend, trendPostCount: matchingPosts.length,
-    trendPostIds: platform ? matchingPosts.map(post => post.id) : [], unit, start, end, modes, profiles, accountFeedAt });
+    trendPostIds: platform ? matchingPosts.map(post => post.id) : [], trendRecentOnly: recentOnly, unit, start, end, modes, profiles, accountFeedAt });
 }
 
 async function postTrend(db, windows, ids, start, end) {

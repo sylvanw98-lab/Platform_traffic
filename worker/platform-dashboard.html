@@ -23,7 +23,7 @@
 <section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
 <div id="trend-mode" class="switch trend-mode" aria-label="互动趋势展示方式"></div>
 <form id="trend-filters" class="trend-filters" aria-label="互动趋势筛选">
-<details id="post-picker" class="post-picker"><summary id="post-selection">帖子名称 · 全部</summary><div id="post-options" class="post-picker-options"></div></details>
+<details id="post-picker" class="post-picker"><summary id="post-selection">帖子名称 · 最近 3 条</summary><div id="post-options" class="post-picker-options"></div></details>
 <details id="date-range" class="date-range">
 <summary id="date-selection">发布日期 · 全部</summary>
 <div class="date-range-fields"><label>开始日期<input type="date" id="published-from"></label><label>结束日期<input type="date" id="published-to"></label></div>
@@ -39,6 +39,7 @@
 <script>
 const $ = id => view.querySelector('#'+id);
 const selectedPosts=new Set();
+let useRecentPosts=true;
 const labels = { impressions:'浏览量 / 曝光量',likes:'点赞量',comments:'评论数' };
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
@@ -202,11 +203,10 @@ function draw() {
     }
   }
   const metricName=names[metric];
-  const recent=[...series.values()].filter(post=>post.publishedAt!=null)
-    .sort((a,b)=>b.publishedAt-a.publishedAt).slice(0,3);
-  const recentMax=Math.max(1,...recent.flatMap(post=>post.points.map(point=>point.value)));
+  const matched=[...series.values()];
+  const title=data?.trendRecentOnly&&matched.length?'近 '+matched.length+' 条数据':'帖子对比';
   const charts=trendMode==='all'
-    ? [interactionChart('近 3 条数据',recent,trend,metricName,recentMax,true)]
+    ? [interactionChart(title,matched,trend,metricName,postMax,true)]
     : [...series.values()].map(post=>interactionChart(post.title,[post],trend,metricName,postMax));
   $('plot').replaceChildren(...(charts.length?charts:[element('p','暂无符合筛选条件的帖子','empty')]));
 }
@@ -221,7 +221,7 @@ function postName(post) {
 }
 
 function updatePostSelection() {
-  $('post-selection').textContent=selectedPosts.size?'帖子名称 · 已选 '+selectedPosts.size+' 条':'帖子名称 · 全部';
+  $('post-selection').textContent=selectedPosts.size?'帖子名称 · 已选 '+selectedPosts.size+' 条':useRecentPosts?'帖子名称 · 最近 3 条':'帖子名称 · 未选择';
 }
 function publishRange() {
   const from=$('published-from').value;
@@ -245,6 +245,7 @@ function renderPostOptions(posts) {
     checkbox.value=post.id;
     checkbox.checked=selectedPosts.has(post.id);
     checkbox.onchange=()=>{
+      useRecentPosts=false;
       if(checkbox.checked)selectedPosts.add(post.id);
       else selectedPosts.delete(post.id);
       updatePostSelection();
@@ -302,12 +303,18 @@ async function load() {
     const query=new URLSearchParams({unit});
     if(platform) query.set('platform',platform);
     const {from:publishedFrom,to:publishedTo}=publishRange();
-    for(const post of selectedPosts)query.append('post',post);
+    const requestedRecent=useRecentPosts;
+    query.set('postSelection',requestedRecent?'recent':'manual');
+    if(!requestedRecent)for(const post of selectedPosts)query.append('post',post);
     if(publishedFrom)query.set('publishedFrom',publishedFrom);
     if(publishedTo)query.set('publishedTo',publishedTo);
     const response=await fetch('/api/dashboard?'+query);const result=await response.json();
     if(id!==requestId)return;
     if(!response.ok)throw new Error(result.error||'读取失败');
+    if(requestedRecent&&useRecentPosts){
+      selectedPosts.clear();
+      for(const id of result.trendPostIds)selectedPosts.add(id);
+    }
     data=result;render();
   } catch(error) {if(id===requestId)$('status').textContent=error.message;}
 }
@@ -334,6 +341,7 @@ view.addEventListener('click',event=>{
   }
 });
 $('trend-filters').onreset=()=>{
+  useRecentPosts=true;
   selectedPosts.clear();
   $('post-picker').open=false;
   $('date-range').open=false;
