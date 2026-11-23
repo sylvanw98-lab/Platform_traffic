@@ -343,12 +343,13 @@ async function dashboard(env, query) {
   const account = query.get('account') || '';
   const filter = 'p.active=1 AND EXISTS (SELECT 1 FROM settings WHERE key=\'run\' AND json_extract(value,\'$.syncAt\') IS NOT NULL) AND (?=\'\' OR p.platform=?) AND (?=\'\' OR p.account=?)';
   const args = [platform, platform, account, account];
-  const [{ results: posts }, { results: options }, run] = await Promise.all([
+  const [{ results: posts }, { results: options }, run, { results: storedProfiles }] = await Promise.all([
     db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.saves,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
       ON s.post_id=p.id AND s.hour=(SELECT t.hour FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? ORDER BY t.hour DESC LIMIT 1)
       WHERE ${filter} ORDER BY s.impressions DESC, p.id`).bind(end, ...args).all(),
     db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
     getSetting(db, 'run'),
+    db.prepare("SELECT value FROM settings WHERE key LIKE 'profile:%' ORDER BY key").all(),
   ]);
   const trend = [];
   for (let i = 0; i < windows.length; i += 30) {
@@ -374,7 +375,40 @@ async function dashboard(env, query) {
     collectionIssue: (run.collectionIssue || '').split(' · ').filter(issue =>
       !Object.entries(modes).some(([platform, mode]) => mode === 'web' && issue.includes(platform))
     ).join(' · ') || null };
-  return json({ posts, options, run: status, trend, unit, start, end, modes });
+  const allProfiles = storedProfiles.map(row => JSON.parse(row.value));
+  const profiles = allProfiles
+    .filter(profile => (!platform || profile.platform === platform) &&
+      (!account || profile.handle.toLowerCase() === account.replace(/^@/, '').toLowerCase() ||
+        options.some(item => item.platform === profile.platform && item.account === account) &&
+          allProfiles.filter(item => item.platform === profile.platform).length === 1));
+  return json({ posts, options, run: status, trend, unit, start, end, modes, profiles });
+}
+function profileCount(value) {
+  if (count(value) != null) return value;
+  return typeof value === 'string' && /^\d+(?:[.,]\d+)?\s*(?:[KMB]|万|亿)$/i.test(value) ? value : null;
+}
+
+async function saveWebProfile(request, env) {
+  if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
+    return json({ error: '未授权' }, 403);
+  }
+  const rows = await request.json();
+  if (!Array.isArray(rows) || !rows.length || rows.length > 25) return json({ error: '账号数据格式无效' }, 400);
+  const sites = { X: 'https://x.com/', Instagram: 'https://www.instagram.com/', TikTok: 'https://www.tiktok.com/@' };
+  const capturedAt = Date.now();
+  const profiles = [];
+  for (const item of rows) {
+    const { platform, handle } = item || {};
+    const followers = profileCount(item?.followers);
+    const following = profileCount(item?.following);
+    if (!Object.hasOwn(sites, platform) || typeof handle !== 'string' || !/^[\w.]{1,40}$/.test(handle) ||
+        (followers == null && following == null)) return json({ error: '账号数据格式无效' }, 400);
+    profiles.push({ platform, handle, followers, following, capturedAt, url: sites[platform] + handle });
+  }
+  await env.DB.batch(profiles.map(profile => env.DB.prepare(`INSERT INTO settings VALUES (?,?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(
+    'profile:' + profile.platform + ':' + profile.handle.toLowerCase(), JSON.stringify(profile))));
+  return json({ saved: profiles.length });
 }
 async function saveWebSnapshot(request, env) {
   if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
@@ -442,6 +476,7 @@ export default {
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env, url.searchParams);
       if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/web-profiles') return await saveWebProfile(request, env);
       if (request.method === 'POST' && url.pathname === '/api/web-snapshots') return await saveWebSnapshot(request, env);
       if (request.method === 'POST' && url.pathname === '/api/collect') {
         if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) return json({ error: '未授权' }, 403);

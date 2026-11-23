@@ -3,6 +3,8 @@
 <style>
 :root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:20px 0}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
 .platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.post-link{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.profile-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin-top:14px}.profile{border:1px solid var(--line);border-radius:10px;padding:13px 15px}.profile h3{margin:0 0 11px;font-size:1rem}.profile dl{display:flex;gap:24px;margin:0 0 10px}.profile dt{font-size:.85rem;color:var(--muted)}.profile dd{margin:3px 0 0;font-size:1.35rem;font-weight:700}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -15,6 +17,7 @@
 <label>开始日期<input type="date" id="from"></label><label>结束日期<input type="date" id="to"></label>
 <button type="submit">应用筛选</button><button type="reset">重置</button></form>
 <div class="cards" id="cards"></div>
+<section class="panel" id="profiles" hidden><h2>账号概况</h2><div class="profile-list" id="profile-list"></div></section>
 <section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
 <div id="plot"></div><p class="note" id="coverage"></p>
@@ -129,8 +132,29 @@ function draw() {
   }
   plot.append(svg);
 }
+function renderProfiles(profiles) {
+  const section=$('profiles');
+  const list=$('profile-list');
+  section.hidden=!profiles.length;
+  list.replaceChildren(...profiles.map(profile=>{
+    const card=element('article',null,'profile');
+    const heading=element('h3');
+    const link=element('a',profile.platform+' · @'+profile.handle);
+    link.href=profile.url;link.target='_blank';link.rel='noopener noreferrer';
+    heading.append(link);
+    const stats=element('dl');
+    for(const [key,label] of [['followers','粉丝数'],['following','关注数']]){
+      const pair=element('div');
+      pair.append(element('dt',label),element('dd',typeof profile[key]==='string'?profile[key]:format(profile[key])));
+      stats.append(pair);
+    }
+    card.append(heading,stats,element('p','最近采集 '+time(profile.capturedAt),'note'));
+    return card;
+  }));
+}
 function render() {
   const {posts,run}=data;
+  renderProfiles(data.profiles||[]);
   const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
   const webPlatforms=[...new Set(data.options.map(item=>item.platform))].filter(item=>(!platform||item===platform)&&data.modes?.[item]==='web');
   if(webPlatforms.length)status.unshift(webPlatforms.join('、')+' 使用网页采集');
@@ -147,7 +171,10 @@ function render() {
     return card;
   }));
   rows($('posts'),posts.map(post=>{
-    const link=element('a',post.title||post.url);link.href=post.url;link.target='_blank';link.rel='noopener noreferrer';
+    const title=post.title?.trim();
+    const link=element('a',title||'查看原帖','post-link');
+    link.href=post.url;link.target='_blank';link.rel='noopener noreferrer';
+    if(title)link.title=title;
     return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),post.platform === 'TikTok' ? format(post.saves) : '—',post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
   }),9,'暂无符合筛选条件的帖子');
   draw();
