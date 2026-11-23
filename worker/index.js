@@ -2,15 +2,13 @@ const html = '__DASHBOARD__';
 const hourMs = 3600000;
 const offset = 8 * hourMs;
 const metrics = ['impressions', 'likes', 'comments'];
-const spreadsheet = 'WCjSs5eMjh7WY4tnvLkcqufanpd';
-const feishu = 'https://open.feishu.cn/open-apis';
 const json = (value, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'private, no-store' } });
 const hourOf = (time) => Math.floor(time / hourMs) * hourMs;
 
 async function readJson(url, options, provider) {
   const response = await fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
   const data = await response.json().catch(() => null);
-  if (!response.ok || !data || (provider === '飞书' && data.code !== 0)) {
+  if (!response.ok || !data) {
     const retry = response.headers.get('Retry-After');
     const reset = response.headers.get('x-rate-limit-reset');
     const now = Date.now();
@@ -23,96 +21,26 @@ async function readJson(url, options, provider) {
   return data;
 }
 
+const accountFeeds = {
+  X: { handle: 'shotpoet', origin: 'https://x.com', prefix: 'x:', postPath: /^\/shotpoet\/status\/(\d+)\/?$/ },
+  Instagram: { handle: 'shotpoet_ai', origin: 'https://www.instagram.com', prefix: 'instagram:', postPath: /^\/shotpoet_ai\/(?:p|reel|reels|tv)\/([\w-]+)\/?$/ },
+  TikTok: { handle: 'shotpoet_ai', origin: 'https://www.tiktok.com', prefix: 'tiktok:', postPath: /^\/@shotpoet_ai\/(?:video|photo)\/(\d+)\/?$/ },
+};
+
 function instagramCode(path) {
   return path.match(/^\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/([\w-]+)(?:\/|$)/)?.[1];
 }
 
-function tiktokVideo(path) {
-  return path.match(/^\/(?:@[^/]+\/(?:video|photo)|v)\/(\d+)(?:\/|$)/)?.[1];
+function accountPost(entry) {
+  const feed = accountFeeds[entry.platform];
+  if (!Object.hasOwn(accountFeeds, entry.platform) || typeof entry.url !== 'string' || !URL.canParse(entry.url)) return null;
+  const url = new URL(entry.url);
+  const match = url.origin === feed.origin && url.pathname.match(feed.postPath);
+  if (!match || url.username || url.password) return null;
+  const id = feed.prefix + match[1];
+  if (entry.id !== id) return null;
+  return { id, platform: entry.platform, account: feed.handle, url: url.origin + url.pathname, title: capturedTitle(entry) };
 }
-
-async function normalizeTikTok(post) {
-  let url = new URL(post.url);
-  for (let i = 0; i < 4; i++) {
-    if (url.protocol !== 'https:' || url.port || url.username || url.password ||
-        !/^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/i.test(url.hostname)) break;
-    const id = tiktokVideo(url.pathname);
-    if (id) return { ...post, id: 'tiktok:' + id, account: post.account || url.pathname.split('/')[1],
-      url: url.origin + url.pathname };
-    const response = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(5000) });
-    const location = response.headers.get('Location');
-    if (response.status < 300 || response.status >= 400 || !location) break;
-    url = new URL(location, url);
-  }
-  return post;
-}
-function postFromRow(row) {
-  const cell = row[4];
-  const candidates = (Array.isArray(cell) ? cell : [cell]).flatMap(item =>
-    typeof item === 'string' ? [item] : [item?.link, item?.url, item?.text]);
-  return candidates.flatMap(value => {
-    const link = typeof value === 'string' && value.match(/https?:\/\/[^\s"<>]+/i)?.[0];
-    if (!link) return [];
-    const url = URL.canParse(link) && new URL(link);
-    if (!url || url.username || url.password) return [];
-    const x = /^(?:www\.|mobile\.)?(?:x|twitter)\.com$/i.test(url.hostname);
-    const ig = /^(?:www\.|m\.)?instagram\.com$/i.test(url.hostname);
-    const tk = /^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/i.test(url.hostname);
-    const statusId = x && url.pathname.match(/^\/(?:i\/web|[\w]+)\/status\/(\d+)(?:\/|$)/)?.[1];
-    const shortcode = ig && instagramCode(url.pathname);
-    const video = tk && tiktokVideo(url.pathname);
-    return [{
-      id: statusId ? 'x:' + statusId : shortcode ? 'instagram:' + shortcode : video ? 'tiktok:' + video : 'url:' + url.origin + url.pathname + url.search,
-      platform: x ? 'X' : ig ? 'Instagram' : tk ? 'TikTok' : url.hostname,
-      account: typeof row[1] === 'string' && row[1].trim() || (statusId || video ? url.pathname.split('/')[1] : ''),
-      url: statusId ? 'https://x.com/i/web/status/' + statusId : url.origin + url.pathname + url.search,
-      title: typeof row[3] === 'string' ? row[3].trim() : '',
-    }];
-  });
-}
-
-async function syncPosts(env, hour) {
-  if (!env.FEISHU_APP_ID || !env.FEISHU_APP_SECRET) throw new Error('待配置飞书应用凭据');
-  const token = await readJson(feishu + '/auth/v3/tenant_access_token/internal', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ app_id: env.FEISHU_APP_ID, app_secret: env.FEISHU_APP_SECRET }),
-  }, '飞书');
-  const options = { headers: { Authorization: 'Bearer ' + token.tenant_access_token } };
-  const root = '/spreadsheets/' + spreadsheet;
-  const metadata = await readJson(feishu + '/sheets/v3' + root + '/sheets/query', options, '飞书');
-  const sheets = metadata.data?.sheets || [];
-  const sheet = sheets.find(item => env.FEISHU_SHEET_ID ? item.sheet_id === env.FEISHU_SHEET_ID : item.title === '发布记录');
-  if (!sheet) throw new Error('未找到发布记录工作表');
-  const posts = new Map();
-  const size = sheet.grid_properties?.row_count;
-  if (!Number.isInteger(size) || size < 1) throw new Error('无法读取工作表行数');
-  for (let start = 2; start <= size; start += 500) {
-    const range = sheet.sheet_id + '!B' + start + ':F' + Math.min(size, start + 499);
-    const result = await readJson(feishu + '/sheets/v2' + root + '/values/' + encodeURIComponent(range) +
-      '?valueRenderOption=UnformattedValue', options, '飞书');
-    const rows = result.data?.valueRange?.values;
-    if (rows != null && !Array.isArray(rows)) throw new Error('飞书返回的单元格格式无效');
-    for (const row of rows || []) {
-      for (const link of postFromRow(row || [])) {
-        const post = link.platform === 'TikTok' && !link.id.startsWith('tiktok:')
-          ? await normalizeTikTok(link).catch(() => link) : link;
-        if (!posts.has(post.id)) posts.set(post.id, post);
-      }
-    }
-  }
-  const statements = [env.DB.prepare('UPDATE posts SET active=0 WHERE active=1')];
-  for (const post of posts.values()) {
-    statements.push(env.DB.prepare(`INSERT INTO posts (id,platform,account,url,title,active,first_hour) VALUES (?,?,?,?,?,1,?)
-      ON CONFLICT(id) DO UPDATE SET platform=excluded.platform, account=excluded.account,
-      url=excluded.url, title=coalesce(nullif(excluded.title,''),posts.title), active=1, parent_id=NULL`)
-      .bind(post.id, post.platform, post.account, post.url, post.title, hour));
-  }
-  statements.push(env.DB.prepare(`UPDATE posts SET active=1 WHERE parent_id IN
-    (SELECT id FROM posts WHERE active=1 AND parent_id IS NULL)`));
-  await env.DB.batch(statements);
-  return posts.size;
-}
-
 async function getSetting(db, key) {
   const row = await db.prepare('SELECT value FROM settings WHERE key=?').bind(key).first();
   return row ? JSON.parse(row.value) : null;
@@ -239,21 +167,8 @@ async function collect(env) {
   const hour = hourOf(now);
   const db = env.DB;
   const previous = await getSetting(db, 'run') || {};
-  if (previous.hour === hour && previous.syncIssue === null && previous.collectionIssue === null && previous.syncAt) return previous;
-  let syncIssue = null;
-  let syncAt = previous.syncAt || null;
-  try {
-    await syncPosts(env, hour);
-    syncAt = Date.now();
-  } catch (error) {
-    syncIssue = safeIssue(error, '飞书同步失败');
-  }
-
-  const state = { hour, attemptedAt: now, syncAt, syncIssue, collectionIssue: null, retryAt: null, platformRetries: {} };
-  if (!state.syncAt) {
-    await putSetting(db, 'run', state);
-    return state;
-  }
+  const state = { hour, attemptedAt: now, collectionIssue: null, retryAt: null, platformRetries: {} };
+  if (previous.hour === hour && previous.collectionIssue === null && previous.collected > 0) return previous;
   if (env.X_COLLECTION_MODE === 'api') await collectX(env, state, previous);
   await collectOtherPlatforms(env, state, previous);
   state.collected = await db.prepare("SELECT count(*) AS n FROM snapshots WHERE hour=? AND source='api'").bind(hour).first('n');
@@ -297,7 +212,7 @@ async function collectX(env, state, previous) {
 }
 
 function safeIssue(error, fallback) {
-  return /^(?:飞书请求失败|X请求失败|待配置|未找到|无法读取工作表|飞书返回)/.test(error.message)
+  return /^(?:X请求失败|待配置)/.test(error.message)
     ? error.message : fallback;
 }
 
@@ -331,7 +246,7 @@ async function dashboard(env, query) {
   const from = parseDay(query.get('from'));
   const to = parseDay(query.get('to'));
   const start = Number.isFinite(from) ? from : floorPeriod(starts[unit], unit);
-  const end = Math.min(Number.isFinite(to) ? to + 24 * hourMs : now, now);
+  const end = Math.min(Number.isFinite(to) ? to + 24 * hourMs : Date.now(), Date.now());
   const windows = [];
   for (let left = start; left < end;) {
     if (windows.length >= 744) return json({ error: '时间范围过长，请缩短范围或切换时间粒度' }, 400);
@@ -341,37 +256,24 @@ async function dashboard(env, query) {
   }
   const platform = query.get('platform') || '';
   const account = query.get('account') || '';
-  const filter = 'p.active=1 AND EXISTS (SELECT 1 FROM settings WHERE key=\'run\' AND json_extract(value,\'$.syncAt\') IS NOT NULL) AND (?=\'\' OR p.platform=?) AND (?=\'\' OR p.account=?)';
+  const filter = "p.active=1 AND (p.id LIKE 'x:%' OR p.id LIKE 'instagram:%' OR p.id LIKE 'tiktok:%')" +
+    " AND (?='' OR p.platform=?) AND (?='' OR p.account=?)";
   const args = [platform, platform, account, account];
-  const [{ results: posts }, { results: options }, run, { results: storedProfiles }] = await Promise.all([
+  const [{ results: posts }, { results: options }, run, accountFeedAt, { results: storedProfiles }] = await Promise.all([
     db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.saves,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
       ON s.post_id=p.id AND s.hour=(SELECT t.hour FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? ORDER BY t.hour DESC LIMIT 1)
       WHERE ${filter} ORDER BY s.impressions DESC, p.id`).bind(end, ...args).all(),
     db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
     getSetting(db, 'run'),
+    getSetting(db, 'accountFeedAt'),
     db.prepare("SELECT value FROM settings WHERE key LIKE 'profile:%' ORDER BY key").all(),
   ]);
-  const trend = [];
-  for (let i = 0; i < windows.length; i += 30) {
-    const batch = windows.slice(i, i + 30);
-    const rows = batch.map(() => '(?,?)').join(',');
-    const select = [...metrics, 'saves'].map(metric => `sum(b.${metric}-a.${metric}) AS ${metric},
-      count(b.${metric}-a.${metric}) AS ${metric}_coverage`).join(',');
-    const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
-      SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
-      LEFT JOIN posts p ON p.first_hour<=w.end AND ${filter}
-      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start
-      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end AND b.source=a.source
-      GROUP BY w.start,w.end ORDER BY w.start`)
-      .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
-    trend.push(...results);
-  }
   const modes = {
     X: env.X_COLLECTION_MODE === 'api' ? 'api' : 'web',
     Instagram: env.INSTAGRAM_COLLECTION_MODE === 'api' ? 'api' : 'web',
     TikTok: env.TIKTOK_COLLECTION_MODE === 'api' ? 'api' : 'web',
   };
-  const status = run && { ...run, retryAt: modes.X === 'api' ? run.retryAt : null,
+  const status = run && { ...run, syncIssue: null, retryAt: modes.X === 'api' ? run.retryAt : null,
     collectionIssue: (run.collectionIssue || '').split(' · ').filter(issue =>
       !Object.entries(modes).some(([platform, mode]) => mode === 'web' && issue.includes(platform))
     ).join(' · ') || null };
@@ -381,7 +283,29 @@ async function dashboard(env, query) {
       (!account || profile.handle.toLowerCase() === account.replace(/^@/, '').toLowerCase() ||
         options.some(item => item.platform === profile.platform && item.account === account) &&
           allProfiles.filter(item => item.platform === profile.platform).length === 1));
-  return json({ posts, options, run: status, trend, unit, start, end, modes, profiles });
+  const trend = await followerTrend(db, profiles, windows, start, end);
+  return json({ posts, options, run: status, trend, unit, start, end, modes, profiles, accountFeedAt });
+}
+
+async function followerTrend(db, profiles, windows, start, end) {
+  const history = await Promise.all(profiles.map(async ({ platform, handle }) => {
+    const { results } = await db.prepare(`WITH history AS (
+      SELECT captured_at,followers,lag(followers) OVER (ORDER BY captured_at) AS previous
+      FROM profile_snapshots WHERE platform=? AND handle=? AND captured_at<?
+    ) SELECT captured_at,followers,previous FROM history WHERE captured_at>=? AND previous IS NOT NULL ORDER BY captured_at`)
+      .bind(platform, handle.toLowerCase(), end, start).all();
+    return results;
+  }));
+  const cursors = profiles.map(() => 0);
+  return windows.map(window => ({ ...window, accounts: profiles.map(({ platform, handle }, index) => {
+    const events = history[index];
+    const first = events[cursors[index]];
+    if (!first || first.captured_at >= window.end) return { platform, handle, growth: null, percent: null };
+    let last = first;
+    while (events[cursors[index]]?.captured_at < window.end) last = events[cursors[index]++];
+    const growth = last.followers - first.previous;
+    return { platform, handle, growth, percent: first.previous > 0 ? growth / first.previous * 100 : null };
+  }) }));
 }
 function profileCount(value) {
   if (count(value) != null) return value;
@@ -405,9 +329,23 @@ async function saveWebProfile(request, env) {
         (followers == null && following == null)) return json({ error: '账号数据格式无效' }, 400);
     profiles.push({ platform, handle, followers, following, capturedAt, url: sites[platform] + handle });
   }
-  await env.DB.batch(profiles.map(profile => env.DB.prepare(`INSERT INTO settings VALUES (?,?)
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(
-    'profile:' + profile.platform + ':' + profile.handle.toLowerCase(), JSON.stringify(profile))));
+  const writes = [];
+  for (const profile of profiles) {
+    const handle = profile.handle.toLowerCase();
+    const key = 'profile:' + profile.platform + ':' + handle;
+    const previous = await getSetting(env.DB, key);
+    if (previous && count(previous.followers) != null && Number.isSafeInteger(previous.capturedAt)) {
+      writes.push(env.DB.prepare('INSERT OR IGNORE INTO profile_snapshots VALUES (?,?,?,?)')
+        .bind(profile.platform, handle, previous.capturedAt, previous.followers));
+    }
+    if (count(profile.followers) != null) {
+      writes.push(env.DB.prepare('INSERT OR IGNORE INTO profile_snapshots VALUES (?,?,?,?)')
+        .bind(profile.platform, handle, capturedAt, profile.followers));
+    }
+    writes.push(env.DB.prepare(`INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+      .bind(key, JSON.stringify(profile)));
+  }
+  await env.DB.batch(writes);
   return json({ saved: profiles.length });
 }
 function capturedTitle(entry) {
@@ -432,23 +370,17 @@ async function saveWebSnapshot(request, env) {
   const titles = [];
   const writes = [];
   for (const entry of entries) {
-    if (entry.parentId != null) {
-      const parent = await env.DB.prepare('SELECT id,url,account FROM posts WHERE id=? AND active=1 AND platform=?')
-        .bind(entry.parentId, 'Instagram').first();
-      const url = typeof entry.url === 'string' && URL.canParse(entry.url) ? new URL(entry.url) : null;
-      const owner = parent && new URL(parent.url).pathname.match(/^\/([\w.]+)\/?$/)?.[1];
-      const match = url && url.pathname.match(/^\/([\w.]+)\/(?:p|reel|reels|tv)\/([\w-]+)\/?$/);
-      if (!owner || url?.origin !== 'https://www.instagram.com' || match?.[1].toLowerCase() !== owner.toLowerCase() ||
-          entry.id !== 'instagram:' + match?.[2]) return json({ error: 'Instagram 帖子与主页不匹配' }, 400);
+    if (entry.url != null || entry.platform != null) {
+      const post = accountPost(entry);
+      if (!post) return json({ error: '帖子链接与采集账号不匹配' }, 400);
       discovered.push(env.DB.prepare(`INSERT INTO posts
-        (id,platform,account,url,title,active,first_hour,parent_id) VALUES (?,?,?,?,?,1,?,?)
-        ON CONFLICT(id) DO UPDATE SET active=1, url=excluded.url, account=excluded.account, title=excluded.title
-        WHERE posts.parent_id=excluded.parent_id`).bind(entry.id, 'Instagram', parent.account || owner,
-          url.origin + url.pathname, capturedTitle(entry),
-          hourOf(now), parent.id));
+        (id,platform,account,url,title,active,first_hour,parent_id) VALUES (?,?,?,?,?,1,?,NULL)
+        ON CONFLICT(id) DO UPDATE SET active=1, url=excluded.url, account=excluded.account, parent_id=NULL,
+        title=coalesce(nullif(posts.title,''),excluded.title)`).bind(
+          post.id, post.platform, post.account, post.url, post.title, hourOf(now)));
     }
     const title = capturedTitle(entry);
-    if (title && entry.parentId == null) {
+    if (title && entry.url == null) {
       titles.push(env.DB.prepare("UPDATE posts SET title=? WHERE id=? AND active=1 AND title=''").bind(title, entry.id));
     }
     if (!hasWebMetrics(entry)) continue;
@@ -461,7 +393,9 @@ async function saveWebSnapshot(request, env) {
   }
   const results = (await env.DB.batch([...discovered, ...titles, ...writes])).slice(discovered.length);
   const named = results.slice(0, titles.length).reduce((sum, result) => sum + result.meta.changes, 0);
-  return json({ named, saved: results.slice(titles.length).reduce((sum, result) => sum + result.meta.changes, 0) });
+  const saved = results.slice(titles.length).reduce((sum, result) => sum + result.meta.changes, 0);
+  if (discovered.length && saved) await putSetting(env.DB, 'accountFeedAt', now);
+  return json({ named, saved });
 }
 async function mcp(request, env) {
   const rpc = await request.json();
@@ -470,7 +404,7 @@ async function mcp(request, env) {
     return reply({ supportedVersions: ['2026-07-28'], capabilities: { tools: {} } });
   }
   if (rpc.method === 'tools/list') {
-    return reply({ tools: [{ name: 'collect_metrics', description: '同步飞书发布链接并采集本小时指标', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }] });
+    return reply({ tools: [{ name: 'collect_metrics', description: '采集已配置接口账号的本小时指标', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }] });
   }
   if (rpc.method === 'tools/call' && rpc.params?.name === 'collect_metrics') {
     const email = request.headers.get('oai-authenticated-user-email')?.toLowerCase();

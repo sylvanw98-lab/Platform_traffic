@@ -29,6 +29,13 @@
       "version": "6",
       "tag": "0003_tiktok_saves",
       "breakpoints": true
+    },
+    {
+      "breakpoints": true,
+      "tag": "0004_profile_snapshots",
+      "version": "6",
+      "idx": 4,
+      "when": 1795423200000
     }
   ]
 }

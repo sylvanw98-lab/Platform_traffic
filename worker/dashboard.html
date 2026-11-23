@@ -3,12 +3,12 @@
 <style>
 :root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:20px 0}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
 .platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.post-link{border:0;padding:0;min-height:0;background:transparent;color:var(--green);text-align:left;text-decoration:underline;text-underline-offset:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .profile-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin-top:14px}.profile{border:1px solid var(--line);border-radius:10px;padding:13px 15px}.profile h3{margin:0 0 11px;font-size:1rem}.profile dl{display:flex;gap:24px;margin:0 0 10px}.profile dt{font-size:.85rem;color:var(--muted)}.profile dd{margin:3px 0 0;font-size:1.35rem;font-weight:700}
+.account-summary{grid-template-columns:minmax(200px,1fr);max-width:380px}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
-<div class="intro"><div><h1>发布数据看板</h1><p class="sub">飞书发布记录 · 北京时间</p></div><p class="note" id="last"></p></div>
+<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><p class="note" id="last"></p></div>
 <div id="status" class="status" role="status">正在读取数据……</div>
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
 <form class="filters" id="filters">
@@ -16,136 +16,67 @@
 <label>账号<select id="account"><option value="">全部账号</option></select></label>
 <label>开始日期<input type="date" id="from"></label><label>结束日期<input type="date" id="to"></label>
 <button type="submit">应用筛选</button><button type="reset">重置</button></form>
-<div class="cards" id="cards"></div>
-<section class="panel" id="profiles" hidden><h2>账号概况</h2><div class="profile-list" id="profile-list"></div></section>
-<section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
-<div id="legend" class="legend" aria-label="趋势指标"></div>
-<div id="plot"></div><p class="note" id="coverage"></p>
-<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段开始</th><th>净变化</th><th>采集覆盖</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
-</section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
-<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+<div class="cards account-summary"><article class="card"><span class="sub">总发帖数</span><strong id="post-total">—</strong><p class="note">按已从账号主页采集的帖子统计</p></article></div>
+<section class="panel" id="profiles"><h2>账号概况</h2><div class="profile-list" id="profile-list"></div></section>
+<section class="panel">
+<div class="panel-head"><h2>粉丝涨幅</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
+<div id="legend" class="legend"></div><div id="plot"></div>
+<details id="trend-details"><summary>查看粉丝变化明细</summary><div class="table-wrap"><table>
+<thead><tr><th>时段</th><th>账号</th><th>净增粉丝</th><th>涨幅</th></tr></thead><tbody id="period-table"></tbody>
+</table></div></details>
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
-const labels = { impressions:'浏览量 / 曝光量',likes:'点赞量',comments:'评论数' };
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
+const colors = {X:'#17694f',Instagram:'#a43e74',TikTok:'#4165b6'};
 const fmt = new Intl.NumberFormat('zh-CN');
-const local = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-const format = number => number == null ? '暂无数据' : fmt.format(number);
-const time = value => value ? local.format(value) : '暂无记录';
-const initialPlatform = new URLSearchParams(location.search).get('platform') || '';
-let platform = Object.hasOwn(platforms, initialPlatform) ? initialPlatform : '';
-let unit = 'day', metric = 'impressions', data, requestId = 0;
+const pct = new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2,style:'percent'});
+const clock = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const format = value => value == null ? '暂无数据' : typeof value==='string'?value:fmt.format(value);
+const date = value => clock.format(value);
+const initial = new URLSearchParams(location.search).get('platform') || '';
+let platform = Object.hasOwn(platforms,initial) ? initial : '';
+let unit='day', requestId=0, data;
 
-function visibleMetrics() {
-  const names = {...labels};
-  if (platform && (platform !== 'X' || data?.modes?.X === 'web')) names.impressions = '浏览量';
-  if (platform === 'TikTok') names.saves = '收藏数';
-  return names;
-}
-
-function choosePlatform(next) {
-  if (next === platform) return;
-  platform=next;
-  if (metric==='saves' && next!=='TikTok') metric='impressions';
-  $('account').value='';
-  const url=new URL(location.href);
-  if (platform) url.searchParams.set('platform',platform);
-  else url.searchParams.delete('platform');
-  history.replaceState(null,'',url);
-  $('cards').replaceChildren();
-  $('plot').replaceChildren();
-  $('posts').replaceChildren();
-  $('period-table').replaceChildren();
-  $('post-count').textContent='';
-  $('coverage').textContent='';
-  $('trend-details').hidden=true;
-  load();
-}
-function element(name, text, className) {
-  const node=document.createElement(name);
-  if(text!=null) node.textContent=text;
-  if(className) node.className=className;
+function element(tag,text,className) {
+  const node=document.createElement(tag);
+  if(text!=null)node.textContent=text;
+  if(className)node.className=className;
   return node;
 }
-function rows(target, values, columns, empty) {
+function switches(target,choices,selected,apply) {
   target.replaceChildren();
-  if (!values.length) {
-    const cell=target.insertRow().insertCell(); cell.colSpan=columns;cell.className='empty';cell.textContent=empty;
-    return;
-  }
-  for(const cells of values) {
-    const row=target.insertRow();
-    for(const value of cells) {
-      const cell=row.insertCell();
-      if(value instanceof Node) cell.append(value); else cell.textContent=value;
-    }
-  }
-}
-function switches(target, choices, selected, apply) {
-  target.replaceChildren();
-  for(const [key,label] of Object.entries(choices)) {
-    const button=element('button',label);button.type='button';button.setAttribute('aria-pressed',key===selected);
+  for(const [key,label] of Object.entries(choices)){
+    const button=element('button',label);
+    button.type='button';button.setAttribute('aria-pressed',key===selected);
     button.onclick=()=>apply(key);target.append(button);
   }
 }
-function options(target, values, label) {
-  const previous=target.value;
-  target.replaceChildren(new Option(label,''),...Array.from(new Set(values.filter(Boolean))).map(value=>new Option(value,value)));
-  if([...target.options].some(option=>option.value===previous)) target.value=previous;
+function choosePlatform(next) {
+  if(next===platform)return;
+  platform=next;
+  $('account').value='';
+  const url=new URL(location.href);
+  if(next)url.searchParams.set('platform',next);else url.searchParams.delete('platform');
+  history.replaceState(null,'',url);
+  $('post-total').textContent='—';
+  $('profile-list').replaceChildren();
+  $('legend').replaceChildren();
+  $('plot').replaceChildren();
+  $('trend-details').hidden=true;
+  load();
 }
-function draw() {
-  const names=visibleMetrics();
-  switches($('legend'),names,metric,key=>{metric=key;draw();});
-  const trend=data?.trend||[];
-  const points=trend.map((period,index)=>({index,period,value:period[metric]})).filter(item=>item.value!=null);
-  const plot=$('plot');plot.replaceChildren();
-  $('trend-details').hidden=!trend.length;
-  rows($('period-table'),trend.slice().reverse().map(p=>[time(p.start),format(p[metric]),p[metric+'_coverage']+' / '+p.expected+(p[metric+'_coverage']<p.expected?' · 数据不完整':'')]),3,'暂无时段数据');
-  $('coverage').textContent=trend.length ? '趋势使用同一来源的两端采集数据。' : '';
-  if(!points.length){plot.append(element('p','暂无可计算的趋势数据','empty'));return;}
-  const ns='http://www.w3.org/2000/svg';
-  const svg=document.createElementNS(ns,'svg');
-  svg.setAttribute('viewBox','0 0 880 235');svg.setAttribute('class','chart');
-  svg.setAttribute('role','img');svg.setAttribute('aria-label',names[metric]+'净变化趋势');
-  const max=Math.max(0,...points.map(p=>p.value)),min=Math.min(0,...points.map(p=>p.value));
-  const y=value=>18+(max-value)*164/(max-min||1), x=index=>63+index*795/Math.max(trend.length-1,1);
-  function svgEl(tag,attrs,label) {
-    const item=document.createElementNS(ns,tag);
-    for(const [key,value] of Object.entries(attrs))item.setAttribute(key,value);
-    if(label!=null)item.textContent=label;
-    svg.append(item);return item;
-  }
-  const ticks=min===max?[0]:Array.from({length:5},(_,i)=>min+(max-min)*i/4);
-  for(const val of ticks){svgEl('line',{x1:63,x2:860,y1:y(val),y2:y(val),class:'grid'});svgEl('text',{x:56,y:y(val)+4,'text-anchor':'end'},fmt.format(Math.round(val)));}
-  let prev;
-  for(const point of points){
-    if(prev?.index===point.index-1)svgEl('line',{x1:x(prev.index),x2:x(point.index),y1:y(prev.value),y2:y(point.value),stroke:'#21805e','stroke-width':2});
-    const dot=svgEl('circle',{cx:x(point.index),cy:y(point.value),r:3,fill:point.period[metric+'_coverage']<point.period.expected?'#ae742d':'#17694f'});
-    const hint=document.createElementNS(ns,'title');hint.textContent=time(point.period.start)+' · '+format(point.value)+' · '+point.period[metric+'_coverage']+'/'+point.period.expected;dot.append(hint);prev=point;
-  }
-  const markCount=Math.min(5,trend.length);
-  for(let i=0;i<markCount;i++){
-    const j=Math.round(i*(trend.length-1)/Math.max(markCount-1,1));
-    const label=time(trend[j].start);svgEl('text',{x:x(j),y:211,'text-anchor':i===0?'start':i===markCount-1?'end':'middle'},unit==='hour'?label.slice(5):label.slice(0,10));
-  }
-  plot.append(svg);
+function accountOptions(rows) {
+  const target=$('account');
+  const selected=target.value;
+  const accounts=[...new Set(rows.filter(p=>!platform||p.platform===platform).map(p=>p.account).filter(Boolean))];
+  target.replaceChildren(new Option('全部账号',''),...accounts.map(account=>new Option(account,account)));
+  if(accounts.includes(selected))target.value=selected;
 }
-function postName(post) {
-  const title=post.title?.trim();
-  if(title) return title;
-  const [handle, resource]=new URL(post.url).pathname.split('/').filter(Boolean);
-  if(handle && (post.platform==='TikTok' && handle.startsWith('@') || post.platform==='Instagram' && !resource)){
-    return handle.startsWith('@')?handle:'@'+handle;
-  }
-  return post.account?.trim()||post.platform;
-}
-
 function renderProfiles(profiles) {
-  const section=$('profiles');
   const list=$('profile-list');
-  section.hidden=!profiles.length;
+  if(!profiles.length){list.replaceChildren(element('p','暂无账号数据','note'));return;}
   list.replaceChildren(...profiles.map(profile=>{
     const card=element('article',null,'profile');
     const heading=element('h3');
@@ -155,61 +86,91 @@ function renderProfiles(profiles) {
     const stats=element('dl');
     for(const [key,label] of [['followers','粉丝数'],['following','关注数']]){
       const pair=element('div');
-      pair.append(element('dt',label),element('dd',typeof profile[key]==='string'?profile[key]:format(profile[key])));
+      pair.append(element('dt',label),element('dd',format(profile[key])));
       stats.append(pair);
     }
-    card.append(heading,stats,element('p','最近采集 '+time(profile.capturedAt),'note'));
+    card.append(heading,stats,element('p','最近采集 '+date(profile.capturedAt),'note'));
     return card;
   }));
 }
-function render() {
-  const {posts,run}=data;
-  renderProfiles(data.profiles||[]);
-  const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
-  const webPlatforms=[...new Set(data.options.map(item=>item.platform))].filter(item=>(!platform||item===platform)&&data.modes?.[item]==='web');
-  if(webPlatforms.length)status.unshift(webPlatforms.join('、')+' 使用网页采集');
-  if(run?.retryAt)status.push('可重试时间 '+time(run.retryAt));
-  $('status').textContent=status.join(' · ')||'最近一轮采集已完成';
-  $('last').textContent=run?.syncAt?'最近同步 '+time(run.syncAt):'';
-  $('post-count').textContent='共 '+posts.length+' 条';
-  options($('account'),data.options.filter(p=>!platform||p.platform===platform).map(p=>p.account),'全部账号');
-  $('cards').classList.toggle('four',platform==='TikTok');
-  $('cards').replaceChildren(...Object.entries(visibleMetrics()).map(([key,label])=>{
-    const values=posts.map(post=>post[key]).filter(value=>value!=null);
-    const card=element('article',null,'card');
-    card.append(element('span',label,'sub'),element('strong',format(values.length?values.reduce((a,b)=>a+b,0):null)),element('p','累计值 · '+values.length+'/'+posts.length+' 条有数据','note'));
-    return card;
-  }));
-  rows($('posts'),posts.map(post=>{
-    const title=postName(post);
-    const link=element('button',title,'post-link');
-    link.type='button';
-    link.title=title;
-    link.onclick=()=>{
-      const url=new URL(post.url);
-      if(url.protocol==='https:'||url.protocol==='http:') window.open(url.href,'_blank','noopener,noreferrer');
-    };
-    return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),post.platform === 'TikTok' ? format(post.saves) : '—',post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
-  }),9,'暂无符合筛选条件的帖子');
-  draw();
+function periodLabel(value) {
+  const label=date(value);
+  if(unit==='hour')return label.slice(5);
+  if(unit==='month')return label.slice(0,7);
+  if(unit==='year')return label.slice(0,4);
+  return label.slice(0,10);
+}
+function draw() {
+  const trend=data.trend;
+  const points=trend.flatMap((period,index)=>period.accounts
+    .filter(account=>account.growth!=null).map(account=>({...account,index,start:period.start})));
+  const plot=$('plot');
+  $('legend').replaceChildren();plot.replaceChildren();$('period-table').replaceChildren();
+  $('trend-details').hidden=!points.length;
+  if(!points.length){plot.append(element('p','同一账号至少需要两次粉丝数采集记录才能计算涨幅。','empty'));return;}
+  const series=[...new Set(points.map(point=>point.platform))];
+  for(const name of series){
+    const label=element('span',name,'note');label.style.color=colors[name];$('legend').append(label);
+  }
+  for(const point of points.slice().reverse()){
+    const row=$('period-table').insertRow();
+    for(const value of [periodLabel(point.start),point.platform+' · @'+point.handle,fmt.format(point.growth),
+      point.percent==null?'—':pct.format(point.percent/100)])row.insertCell().textContent=value;
+  }
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 880 235');svg.setAttribute('class','chart');
+  svg.setAttribute('role','img');svg.setAttribute('aria-label','粉丝净增长趋势');
+  function node(tag,attrs,text,owner=svg) {
+    const item=document.createElementNS(svg.namespaceURI,tag);
+    for(const [key,value] of Object.entries(attrs))item.setAttribute(key,value);
+    if(text!=null)item.textContent=text;
+    owner.append(item);return item;
+  }
+  const high=Math.max(1,...points.map(p=>p.growth)), low=Math.min(-1,...points.map(p=>p.growth));
+  const y=value=>18+(high-value)*164/(high-low);
+  const x=index=>62+(index+.5)*795/Math.max(trend.length,1);
+  for(const value of [...new Set([low,0,high])]){
+    node('line',{x1:62,x2:858,y1:y(value),y2:y(value),class:'grid'});
+    node('text',{x:54,y:y(value)+4,'text-anchor':'end'},fmt.format(value));
+  }
+  const width=Math.max(2,Math.min(12,795/trend.length/(series.length+1)));
+  for(const point of points){
+    const center=x(point.index)+(series.indexOf(point.platform)-(series.length-1)/2)*width;
+    const bar=node('rect',{x:center-width/2,y:Math.min(y(point.growth),y(0)),width:width-1,height:Math.max(2,Math.abs(y(point.growth)-y(0))),fill:colors[point.platform]});
+    node('title',{},periodLabel(point.start)+' · '+point.platform+' · '+fmt.format(point.growth)+' 位粉丝',bar);
+  }
+  const marks=Math.min(5,trend.length);
+  for(let i=0;i<marks;i++){
+    const index=Math.round(i*(trend.length-1)/Math.max(marks-1,1));
+    node('text',{x:x(index),y:211,'text-anchor':i===0?'start':i===marks-1?'end':'middle'},periodLabel(trend[index].start));
+  }
+  plot.append(svg);
 }
 async function load() {
   const id=++requestId;
   switches($('platform-tabs'),platforms,platform,choosePlatform);
   switches($('periods'),periods,unit,key=>{unit=key;load();});
-  $('status').textContent='正在读取数据……';
+  $('status').textContent='正在读取账号数据……';
   try {
     const query=new URLSearchParams({unit});
-    if(platform) query.set('platform',platform);
-    for(const key of ['account','from','to']) if($(key).value) query.set(key,$(key).value);
+    if(platform)query.set('platform',platform);
+    for(const key of ['account','from','to'])if($(key).value)query.set(key,$(key).value);
     if($('from').value&&$('to').value&&$('from').value>$('to').value)throw new Error('开始日期须早于或等于结束日期');
-    const response=await fetch('/api/dashboard?'+query);const result=await response.json();
+    const response=await fetch('/api/dashboard?'+query);
+    const result=await response.json();
     if(id!==requestId)return;
     if(!response.ok)throw new Error(result.error||'读取失败');
-    data=result;render();
-  } catch(error) {if(id===requestId)$('status').textContent=error.message;}
+    data=result;
+    accountOptions(data.options);
+    $('post-total').textContent=fmt.format(data.posts.length);
+    renderProfiles(data.profiles);
+    $('last').textContent=data.accountFeedAt?'最近采集 '+date(data.accountFeedAt):'';
+    const web=[...new Set(data.profiles.map(p=>p.platform))].filter(p=>data.modes?.[p]==='web');
+    $('status').textContent=web.length?web.join('、')+' 使用网页采集':'等待账号采集';
+    draw();
+  }catch(error){if(id===requestId)$('status').textContent=error.message;}
 }
 $('filters').onsubmit=event=>{event.preventDefault();load();};
 $('filters').onreset=()=>setTimeout(load,0);
-draw();load();
+load();
 </script></body></html>
