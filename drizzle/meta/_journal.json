@@ -8,6 +8,13 @@
       "when": 1795392000000,
       "tag": "0000_metrics",
       "breakpoints": true
+    },
+    {
+      "breakpoints": true,
+      "idx": 1,
+      "version": "6",
+      "tag": "0001_snapshot_source",
+      "when": 1795395600000
     }
   ]
 }

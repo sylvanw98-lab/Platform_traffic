@@ -23,6 +23,29 @@ async function readJson(url, options, provider) {
   return data;
 }
 
+function instagramCode(path) {
+  return path.match(/^\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/([\w-]+)(?:\/|$)/)?.[1];
+}
+
+function tiktokVideo(path) {
+  return path.match(/^\/(?:@[^/]+\/(?:video|photo)|v)\/(\d+)(?:\/|$)/)?.[1];
+}
+
+async function normalizeTikTok(post) {
+  let url = new URL(post.url);
+  for (let i = 0; i < 4; i++) {
+    if (url.protocol !== 'https:' || url.port || url.username || url.password ||
+        !/^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/i.test(url.hostname)) break;
+    const id = tiktokVideo(url.pathname);
+    if (id) return { ...post, id: 'tiktok:' + id, account: post.account || url.pathname.split('/')[1],
+      url: url.origin + url.pathname };
+    const response = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(5000) });
+    const location = response.headers.get('Location');
+    if (response.status < 300 || response.status >= 400 || !location) break;
+    url = new URL(location, url);
+  }
+  return post;
+}
 function postFromRow(row) {
   const cell = row[4];
   const candidates = (Array.isArray(cell) ? cell : [cell]).flatMap(item =>
@@ -33,12 +56,16 @@ function postFromRow(row) {
     const url = URL.canParse(link) && new URL(link);
     if (!url || url.username || url.password) return [];
     const x = /^(?:www\.|mobile\.)?(?:x|twitter)\.com$/i.test(url.hostname);
-    const id = x && url.pathname.match(/^\/(?:i\/web|[\w]+)\/status\/(\d+)(?:\/|$)/)?.[1];
+    const ig = /^(?:www\.|m\.)?instagram\.com$/i.test(url.hostname);
+    const tk = /^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/i.test(url.hostname);
+    const statusId = x && url.pathname.match(/^\/(?:i\/web|[\w]+)\/status\/(\d+)(?:\/|$)/)?.[1];
+    const shortcode = ig && instagramCode(url.pathname);
+    const video = tk && tiktokVideo(url.pathname);
     return [{
-      id: id ? 'x:' + id : 'url:' + url.origin + url.pathname + url.search,
-      platform: id ? 'X' : url.hostname,
-      account: typeof row[1] === 'string' && row[1].trim() || (id ? url.pathname.split('/')[1] : ''),
-      url: id ? 'https://x.com/i/web/status/' + id : url.origin + url.pathname + url.search,
+      id: statusId ? 'x:' + statusId : shortcode ? 'instagram:' + shortcode : video ? 'tiktok:' + video : 'url:' + url.origin + url.pathname + url.search,
+      platform: x ? 'X' : ig ? 'Instagram' : tk ? 'TikTok' : url.hostname,
+      account: typeof row[1] === 'string' && row[1].trim() || (statusId || video ? url.pathname.split('/')[1] : ''),
+      url: statusId ? 'https://x.com/i/web/status/' + statusId : url.origin + url.pathname + url.search,
       title: typeof row[3] === 'string' ? row[3].trim() : '',
     }];
   });
@@ -66,7 +93,11 @@ async function syncPosts(env, hour) {
     const rows = result.data?.valueRange?.values;
     if (rows != null && !Array.isArray(rows)) throw new Error('飞书返回的单元格格式无效');
     for (const row of rows || []) {
-      for (const post of postFromRow(row || [])) if (!posts.has(post.id)) posts.set(post.id, post);
+      for (const link of postFromRow(row || [])) {
+        const post = link.platform === 'TikTok' && !link.id.startsWith('tiktok:')
+          ? await normalizeTikTok(link).catch(() => link) : link;
+        if (!posts.has(post.id)) posts.set(post.id, post);
+      }
     }
   }
   const statements = [env.DB.prepare('UPDATE posts SET active=0 WHERE active=1')];
@@ -92,67 +123,170 @@ async function putSetting(db, key, value) {
 function count(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
-async function browserQueue(env) {
-  const db = env.DB;
-  const hour = hourOf(Date.now());
-  const previous = await getSetting(db, 'run') || {};
-  let syncAt = previous.syncAt || null;
-  let syncIssue = null;
-  if (previous.hour === hour && previous.syncAt && !previous.syncIssue) {
-    syncAt = previous.syncAt;
-  } else {
-    try {
-      await syncPosts(env, hour);
-      syncAt = Date.now();
-    } catch (error) {
-      syncIssue = safeIssue(error, '飞书同步失败');
-    }
-  }
-  if (!syncAt) {
-    await db.prepare('INSERT OR IGNORE INTO posts VALUES (?,?,?,?,?,1,?)')
-      .bind('x:2123233635017076746', 'X', 'shotpoet', 'https://x.com/shotpoet/status/2123233635017076746',
-        'AI image generation is getting a little too fun.', hour).run();
-    syncIssue += '，当前使用本地表格样本';
-  }
-  const { results: posts } = await db.prepare(`SELECT p.id,p.url FROM posts p
-    WHERE p.active=1 AND p.platform='X' AND NOT EXISTS
-    (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=?) ORDER BY p.id`).bind(hour).all();
-  await putSetting(db, 'run', { ...previous, hour, attemptedAt: Date.now(), syncAt, syncIssue, retryAt: null,
-    collectionIssue: posts.length ? '等待浏览器采集' : null });
-  return { hour, posts };
+function snapshot(db) {
+  return db.prepare(`INSERT INTO snapshots (post_id,hour,captured_at,impressions,likes,comments,source)
+    VALUES (?,?,?,?,?,?,'api') ON CONFLICT (post_id,hour) DO UPDATE SET captured_at=excluded.captured_at,
+    impressions=excluded.impressions,likes=excluded.likes,comments=excluded.comments,source='api'
+    WHERE snapshots.source<>'api'`);
 }
 
-async function saveBrowserMetrics(request, env) {
-  const body = await request.json();
-  if (!Array.isArray(body.results) || body.results.length > 100 ||
-      !Number.isSafeInteger(body.hour) || body.hour < hourOf(Date.now()) - hourMs ||
-      body.hour > hourOf(Date.now())) return json({ error: '采集批次无效' }, 400);
-  const db = env.DB;
-  let incomplete = 0;
-  const writes = [];
-  for (const result of body.results) {
-    if (typeof result?.id !== 'string' || !/^x:\d+$/.test(result.id)) return json({ error: '帖子 ID 无效' }, 400);
-    const values = metrics.map(metric => count(result[metric]));
-    if (values.some(value => value == null)) incomplete++;
-    if (values.every(value => value == null)) continue;
-    writes.push(db.prepare(`INSERT INTO snapshots SELECT id,?,?,?,?,? FROM posts WHERE id=? AND active=1
-      ON CONFLICT(post_id,hour) DO UPDATE SET
-        impressions=coalesce(snapshots.impressions,excluded.impressions),
-        likes=coalesce(snapshots.likes,excluded.likes),
-        comments=coalesce(snapshots.comments,excluded.comments)`)
-      .bind(body.hour, Date.now(), ...values, result.id));
+function accountCredentials(value) {
+  const accounts = JSON.parse(value);
+  if (!Array.isArray(accounts) || !accounts.length || accounts.some(item => !item || typeof item.accessToken !== 'string' || !item.accessToken)) {
+    throw new Error('账号凭据格式无效');
   }
-  if (writes.length) await db.batch(writes);
-  const previous = await getSetting(db, 'run') || {};
-  const collected = await db.prepare('SELECT count(*) AS n FROM snapshots WHERE hour=?').bind(body.hour).first('n');
-  const remaining = await db.prepare(`SELECT count(*) AS n FROM posts p WHERE p.active=1 AND p.platform='X'
-    AND NOT EXISTS (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=?)`).bind(body.hour).first('n');
-  const partial = await db.prepare(`SELECT count(*) AS n FROM snapshots WHERE hour=?
-    AND (impressions IS NULL OR likes IS NULL OR comments IS NULL)`).bind(body.hour).first('n');
-  const collectionIssue = incomplete || partial || remaining ? '部分网页指标暂不可读或等待采集' : null;
-  if (previous.hour === body.hour) await putSetting(db, 'run', { ...previous, collected, collectionIssue });
-  return json({ collected, incomplete, remaining });
+  return accounts;
 }
+
+async function collectInstagram(rows, env) {
+  const accounts = accountCredentials(env.INSTAGRAM_ACCOUNTS);
+  const pending = new Set(rows.map(row => row.id));
+  const metricsById = new Map();
+  let missingViews = 0;
+  const base = 'https://graph.instagram.com/v27.0';
+  for (const account of accounts) {
+    if (!/^\d+$/.test(account.userId)) throw new Error('Instagram 账号 ID 无效');
+    const auth = { headers: { Authorization: 'Bearer ' + account.accessToken } };
+    let after;
+    do {
+      const query = new URLSearchParams({fields: 'id,permalink,like_count,comments_count', limit: '100'});
+      if (after) query.set('after', after);
+      const page = await readJson(base + '/' + account.userId + '/media?' + query, auth, 'Instagram');
+      for (const media of page.data || []) {
+        if (typeof media.permalink !== 'string' || !URL.canParse(media.permalink) || !/^\d+$/.test(media.id)) continue;
+        const id = 'instagram:' + instagramCode(new URL(media.permalink).pathname);
+        if (!pending.delete(id)) continue;
+        const insights = await readJson(base + '/' + media.id + '/insights?metric=views', auth, 'Instagram')
+          .catch(error => { if (error.retryAt) throw error; return null; });
+        const views = insights?.data?.find(item => item.name === 'views');
+        const value = count(views?.values?.[0]?.value ?? views?.total_value?.value);
+        if (value == null) missingViews++;
+        metricsById.set(id, [value, count(media.like_count), count(media.comments_count)]);
+      }
+      const cursor = page.paging?.next && page.paging?.cursors?.after;
+      if (!cursor || cursor === after) break;
+      after = cursor;
+    } while (pending.size);
+    if (!pending.size) break;
+  }
+  return { metricsById, issue: pending.size ? '部分 Instagram 帖子不属于已授权账号或暂不可读'
+    : missingViews ? '部分 Instagram 帖子的浏览量暂不可读，请检查分析权限' : null };
+}
+
+async function collectTikTok(rows, env) {
+  const accounts = accountCredentials(env.TIKTOK_ACCOUNTS);
+  const pending = new Set(rows.filter(row => row.id.startsWith('tiktok:')).map(row => row.id.slice(7)));
+  const unresolved = rows.length - pending.size;
+  const metricsById = new Map();
+  const issues = [];
+  for (const account of accounts) {
+    const ids = [...pending];
+    for (let i = 0; i < ids.length; i += 20) {
+      const batch = ids.slice(i, i + 20);
+      const data = await readJson('https://open.tiktokapis.com/v2/video/query/?fields=id,view_count,like_count,comment_count', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + account.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters: { video_ids: batch } }),
+      }, 'TikTok');
+      if (data.error?.code !== 'ok') throw new Error('TikTok API 请求失败');
+      for (const video of data.data?.videos || []) {
+        if (!pending.delete(video.id)) continue;
+        metricsById.set('tiktok:' + video.id, [count(video.view_count), count(video.like_count), count(video.comment_count)]);
+      }
+    }
+    if (!pending.size) break;
+  }
+  if (unresolved) issues.push('部分 TikTok 链接缺少视频 ID');
+  if (pending.size) issues.push('部分 TikTok 视频不属于已授权账号或暂不可读');
+  return { metricsById, issue: issues.join(' · ') || null };
+}
+
+async function collectOtherPlatforms(env, state, previous) {
+  for (const [platform, key, collectPlatform] of [
+    ['Instagram', 'INSTAGRAM_ACCOUNTS', collectInstagram],
+    ['TikTok', 'TIKTOK_ACCOUNTS', collectTikTok],
+  ]) {
+    const { results: rows } = await env.DB.prepare(`SELECT p.id FROM posts p WHERE p.active=1 AND p.platform=?
+      AND NOT EXISTS (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=? AND s.source='api')`)
+      .bind(platform, state.hour).all();
+    if (!rows.length) continue;
+    let issue;
+    const resume = previous.platformRetries?.[platform];
+    if (!env[key]) {
+      issue = '待配置 ' + platform + ' 账号授权';
+    } else if (resume > Date.now()) {
+      state.platformRetries[platform] = resume;
+      issue = platform + ' API 限流，等待重试';
+    } else {
+      try {
+        const result = await collectPlatform(rows, env);
+        const writes = [...result.metricsById].map(([id, values]) => snapshot(env.DB).bind(id, state.hour, Date.now(), ...values));
+        for (let i = 0; i < writes.length; i += 100) await env.DB.batch(writes.slice(i, i + 100));
+        issue = result.issue;
+      } catch (error) {
+        issue = platform + ' API 请求失败，请检查授权状态';
+        if (error.retryAt) state.platformRetries[platform] = error.retryAt;
+      }
+    }
+    if (issue) state.collectionIssue = [state.collectionIssue, issue].filter(Boolean).join(' · ');
+  }
+}
+async function collect(env) {
+  const now = Date.now();
+  const hour = hourOf(now);
+  const db = env.DB;
+  const previous = await getSetting(db, 'run') || {};
+  if (previous.hour === hour && previous.syncIssue === null && previous.collectionIssue === null && previous.syncAt) return previous;
+  let syncIssue = null;
+  let syncAt = previous.syncAt || null;
+  try {
+    await syncPosts(env, hour);
+    syncAt = Date.now();
+  } catch (error) {
+    syncIssue = safeIssue(error, '飞书同步失败');
+  }
+
+  const state = { hour, attemptedAt: now, syncAt, syncIssue, collectionIssue: null, retryAt: null, platformRetries: {} };
+  if (!state.syncAt) {
+    await putSetting(db, 'run', state);
+    return state;
+  }
+  const { results: posts } = await db.prepare(`SELECT p.id FROM posts p
+    WHERE p.active=1 AND p.platform='X' AND NOT EXISTS
+    (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=? AND s.source='api') ORDER BY p.id`).bind(hour).all();
+  if (posts.length && !env.X_BEARER_TOKEN) {
+    state.collectionIssue = '待配置 X API 凭据';
+  } else if (previous.retryAt > now) {
+    state.collectionIssue = 'X API 限流，等待重试';
+    state.retryAt = previous.retryAt;
+  } else {
+    for (let i = 0; i < posts.length; i += 100) {
+      const ids = posts.slice(i, i + 100).map(post => post.id.slice(2));
+      try {
+        const result = await readJson('https://api.x.com/2/tweets?ids=' + ids.join(',') + '&tweet.fields=public_metrics,created_at', {
+          headers: { Authorization: 'Bearer ' + env.X_BEARER_TOKEN },
+        }, 'X');
+        const requested = new Set(ids);
+        const writes = (result.data || []).filter(post => requested.has(post.id)).map(post => {
+          const m = post.public_metrics || {};
+          return snapshot(db)
+            .bind('x:' + post.id, hour, Date.now(), count(m.impression_count), count(m.like_count), count(m.reply_count));
+        });
+        if (writes.length) await db.batch(writes);
+        if (writes.length < ids.length) state.collectionIssue = '部分 X 帖子暂时无法读取';
+      } catch (error) {
+        state.collectionIssue = safeIssue(error, 'X 指标采集失败');
+        if (error.retryAt) state.retryAt = error.retryAt;
+        break;
+      }
+    }
+  }
+  await collectOtherPlatforms(env, state, previous);
+  state.collected = await db.prepare("SELECT count(*) AS n FROM snapshots WHERE hour=? AND source='api'").bind(hour).first('n');
+  await putSetting(db, 'run', state);
+  return state;
+}
+
 function safeIssue(error, fallback) {
   return /^(?:飞书请求失败|X请求失败|待配置|未找到|无法读取工作表|飞书返回)/.test(error.message)
     ? error.message : fallback;
@@ -197,13 +331,13 @@ async function dashboard(db, query) {
   }
   const platform = query.get('platform') || '';
   const account = query.get('account') || '';
-  const filter = 'p.active=1 AND (?=\'\' OR p.platform=?) AND (?=\'\' OR p.account=?)';
+  const filter = 'p.active=1 AND EXISTS (SELECT 1 FROM settings WHERE key=\'run\' AND json_extract(value,\'$.syncAt\') IS NOT NULL) AND (?=\'\' OR p.platform=?) AND (?=\'\' OR p.account=?)';
   const args = [platform, platform, account, account];
   const [{ results: posts }, { results: options }, run] = await Promise.all([
     db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.captured_at FROM posts p LEFT JOIN snapshots s
-      ON s.post_id=p.id AND s.hour=(SELECT max(t.hour) FROM snapshots t WHERE t.post_id=p.id AND t.hour<=?)
+      ON s.post_id=p.id AND s.hour=(SELECT max(t.hour) FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? AND t.source='api')
       WHERE ${filter} ORDER BY s.impressions DESC, p.id`).bind(end, ...args).all(),
-    db.prepare('SELECT DISTINCT platform,account FROM posts WHERE active=1 ORDER BY platform,account').all(),
+    db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
     getSetting(db, 'run'),
   ]);
   const trend = [];
@@ -215,13 +349,33 @@ async function dashboard(db, query) {
     const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
       SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
       LEFT JOIN posts p ON p.first_hour<=w.end AND ${filter}
-      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start
-      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end
+      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start AND a.source='api'
+      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end AND b.source='api'
       GROUP BY w.start,w.end ORDER BY w.start`)
       .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
     trend.push(...results);
   }
   return json({ posts, options, run, trend, unit, start, end });
+}
+
+async function mcp(request, env) {
+  const rpc = await request.json();
+  const reply = (result) => json({ jsonrpc: '2.0', id: rpc.id, result });
+  if (rpc.method === 'server/discover') {
+    return reply({ supportedVersions: ['2026-07-28'], capabilities: { tools: {} } });
+  }
+  if (rpc.method === 'tools/list') {
+    return reply({ tools: [{ name: 'collect_metrics', description: '同步飞书发布链接并采集本小时指标', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }] });
+  }
+  if (rpc.method === 'tools/call' && rpc.params?.name === 'collect_metrics') {
+    const email = request.headers.get('oai-authenticated-user-email')?.toLowerCase();
+    if (!env.COLLECT_OWNER_EMAIL || email !== env.COLLECT_OWNER_EMAIL.toLowerCase()) {
+      return reply({ isError: true, content: [{ type: 'text', text: '采集工具尚未授权给当前账号' }] });
+    }
+    const run = await collect(env);
+    return reply({ isError: Boolean(run.collectionIssue || run.syncIssue), content: [{ type: 'text', text: JSON.stringify(run) }] });
+  }
+  return json({ jsonrpc: '2.0', id: rpc.id ?? null, error: { code: -32601, message: 'Method not found' } });
 }
 
 export default {
@@ -232,15 +386,18 @@ export default {
         return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env.DB, url.searchParams);
-      if (request.method === 'POST' && ['/api/browser/queue', '/api/browser/metrics'].includes(url.pathname)) {
-        if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
-          return json({ error: '未授权' }, 403);
-        }
-        return url.pathname.endsWith('/queue') ? json(await browserQueue(env)) : await saveBrowserMetrics(request, env);
+      if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
+      if (request.method === 'POST' && url.pathname === '/api/collect') {
+        if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) return json({ error: '未授权' }, 403);
+        const result = await collect(env);
+        return json(result, result.retryAt ? 429 : result.syncIssue || result.collectionIssue ? 503 : 200);
       }
       return json({ error: '页面不存在' }, 404);
     } catch {
       return json({ error: '服务暂时不可用' }, 503);
     }
+  },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(collect(env));
   },
 };
