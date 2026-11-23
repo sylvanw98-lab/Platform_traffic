@@ -100,6 +100,7 @@ function draw() {
 function render() {
   const {posts,run}=data;
   const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
+  if(data.xMode==='web' && data.options.some(item=>item.platform==='X')) status.unshift('X 使用网页采集');
   if(run?.retryAt)status.push('可重试时间 '+time(run.retryAt));
   $('status').textContent=status.join(' · ')||'最近一轮采集已完成';
   $('last').textContent=run?.syncAt?'最近同步 '+time(run.syncAt):'';

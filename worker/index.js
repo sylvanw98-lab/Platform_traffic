@@ -251,6 +251,16 @@ async function collect(env) {
     await putSetting(db, 'run', state);
     return state;
   }
+  if (env.X_COLLECTION_MODE === 'api') await collectX(env, state, previous);
+  await collectOtherPlatforms(env, state, previous);
+  state.collected = await db.prepare("SELECT count(*) AS n FROM snapshots WHERE hour=? AND source='api'").bind(hour).first('n');
+  await putSetting(db, 'run', state);
+  return state;
+}
+
+async function collectX(env, state, previous) {
+  const { DB: db } = env;
+  const { hour, attemptedAt: now } = state;
   const { results: posts } = await db.prepare(`SELECT p.id FROM posts p
     WHERE p.active=1 AND p.platform='X' AND NOT EXISTS
     (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=? AND s.source='api') ORDER BY p.id`).bind(hour).all();
@@ -281,10 +291,6 @@ async function collect(env) {
       }
     }
   }
-  await collectOtherPlatforms(env, state, previous);
-  state.collected = await db.prepare("SELECT count(*) AS n FROM snapshots WHERE hour=? AND source='api'").bind(hour).first('n');
-  await putSetting(db, 'run', state);
-  return state;
 }
 
 function safeIssue(error, fallback) {
@@ -314,7 +320,8 @@ function parseDay(value) {
   return Number.isFinite(time) && new Date(time + offset).toISOString().slice(0, 10) === value ? time : NaN;
 }
 
-async function dashboard(db, query) {
+async function dashboard(env, query) {
+  const db = env.DB;
   const unit = ['hour', 'day', 'month', 'year'].includes(query.get('unit')) ? query.get('unit') : 'day';
   const now = hourOf(Date.now());
   const starts = { hour: now - 24 * hourMs, day: now - 29 * 24 * hourMs, month: now - 335 * 24 * hourMs, year: now - 4 * 365 * 24 * hourMs };
@@ -355,7 +362,10 @@ async function dashboard(db, query) {
       .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
     trend.push(...results);
   }
-  return json({ posts, options, run, trend, unit, start, end });
+  const xMode = env.X_COLLECTION_MODE === 'api' ? 'api' : 'web';
+  const status = run && xMode === 'web' ? { ...run, retryAt: null,
+    collectionIssue: (run.collectionIssue || '').split(' · ').filter(issue => !/^(?:X请求失败|X API |X 指标|待配置 X API|部分 X 帖子)/.test(issue)).join(' · ') || null } : run;
+  return json({ posts, options, run: status, trend, unit, start, end, xMode });
 }
 
 async function saveWebSnapshot(request, env) {
@@ -403,7 +413,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/') {
         return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
-      if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env.DB, url.searchParams);
+      if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env, url.searchParams);
       if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
       if (request.method === 'POST' && url.pathname === '/api/web-snapshots') return await saveWebSnapshot(request, env);
       if (request.method === 'POST' && url.pathname === '/api/collect') {
