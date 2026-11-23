@@ -36,7 +36,7 @@
 <div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div><p class="note" id="coverage"></p>
 <details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段</th><th>帖子</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="trend-saves-column">收藏数</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
-<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>发布时间</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
@@ -45,9 +45,11 @@ const labels = { impressions:'浏览量 / 曝光量',likes:'点赞量',comments:
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
 const fmt = new Intl.NumberFormat('zh-CN');
-const local = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const dateTimeOptions = {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'};
+const local = new Intl.DateTimeFormat('zh-CN',dateTimeOptions);
+const localWithSeconds = new Intl.DateTimeFormat('zh-CN',{...dateTimeOptions,second:'2-digit'});
 const format = number => number == null ? '暂无数据' : fmt.format(number);
-const time = value => value ? local.format(value) : '暂无记录';
+const time = (value,formatter=local) => value ? formatter.format(value) : '暂无记录';
 const initialPlatform = new URLSearchParams(location.search).get('platform') || '';
 let platform = Object.hasOwn(platforms, initialPlatform) ? initialPlatform : '';
 let unit = 'day', metric = 'impressions', data, requestId = 0;
@@ -280,8 +282,10 @@ function render() {
       const url=new URL(post.url);
       if(url.protocol==='https:'||url.protocol==='http:') window.open(url.href,'_blank','noopener,noreferrer');
     };
-    return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),post.platform === 'TikTok' ? format(post.saves) : '—',post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
-  }),9,'暂无符合筛选条件的帖子');
+    return [link,post.platform,post.account||'—',time(post.published_at,localWithSeconds),
+      ...Object.keys(labels).map(key=>format(post[key])),post.platform === 'TikTok' ? format(post.saves) : '—',
+      post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
+  }),10,'暂无符合筛选条件的帖子');
   draw();
 }
 async function load() {
