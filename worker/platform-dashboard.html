@@ -251,6 +251,12 @@ $('trend-filters').onsubmit=event=>{
 for(const id of ['published-from','published-to']) $(id).oninput=updateDateSelection;
 $('post-picker').ontoggle=()=>{if($('post-picker').open)$('date-range').open=false;};
 $('date-range').ontoggle=()=>{if($('date-range').open)$('post-picker').open=false;};
+document.addEventListener('click',event=>{
+  for(const id of ['post-picker','date-range']){
+    const panel=$(id);
+    if(panel.open&&!panel.contains(event.target))panel.open=false;
+  }
+});
 $('trend-filters').onreset=()=>{
   selectedPosts.clear();
   $('post-picker').open=false;
