@@ -7,6 +7,7 @@
 
 
 .follower-charts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}.follower-chart{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}.follower-chart h3{margin:0 0 6px;font-size:1rem}.follower-chart .chart{height:auto;min-height:130px;margin-top:8px}.follower-chart .chart text{font-size:11px}
+.trend-tabs{display:inline-flex;margin-top:12px}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -15,7 +16,8 @@
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
 <section class="panel" id="profiles"><h2>账号概况</h2><div class="profile-list" id="profile-list"></div></section>
 <section class="panel">
-<div class="panel-head"><h2>粉丝涨幅</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
+<div class="panel-head"><h2>粉丝变化</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
+<div class="switch trend-tabs" id="trend-tabs" aria-label="粉丝趋势指标"></div>
 <div class="follower-charts" id="follower-charts"></div>
 <details id="trend-details"><summary>查看粉丝变化明细</summary><div class="table-wrap"><table>
 <thead><tr><th>时段</th><th>账号</th><th>净增粉丝</th><th>涨幅</th></tr></thead><tbody id="period-table"></tbody>
@@ -25,6 +27,7 @@
 const $ = id => document.getElementById(id);
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
+const trendMetrics = {percent:'粉丝涨幅',growth:'粉丝增值'};
 const colors = {X:'#17694f',Instagram:'#a43e74',TikTok:'#4165b6'};
 const fmt = new Intl.NumberFormat('zh-CN');
 const pct = new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2,style:'percent'});
@@ -33,7 +36,7 @@ const format = value => value == null ? '暂无数据' : typeof value==='string'
 const date = value => clock.format(value);
 const initial = new URLSearchParams(location.search).get('platform') || '';
 let platform = Object.hasOwn(platforms,initial) ? initial : '';
-let unit='day', requestId=0, data;
+let unit='day', trendMetric='percent', requestId=0, data;
 let chartWidth=0;
 
 function element(tag,text,className) {
@@ -97,16 +100,22 @@ function tickIndices(length,width) {
   const count=Math.min(length,12,Math.max(2,Math.floor(width/gap)+1));
   return Array.from({length:count},(_,i)=>Math.round(i*(length-1)/(count-1)));
 }
-function drawChart(name,trend,points,high,low) {
+function trendValue(value) {
+  return trendMetric==='percent'?pct.format(value/100):fmt.format(value);
+}
+function drawChart(name,trend,observations,high,low) {
   const card=element('article',null,'follower-chart');
   card.append(element('h3',name));
+  const recent=observations.at(-1);
+  if(recent){
+    const rate=recent.percent==null?'—':pct.format(recent.percent/100);
+    card.append(element('p','最近时段净增 '+fmt.format(recent.growth)+' 位 · 涨幅 '+rate,'note'));
+  }
+  const points=observations.filter(point=>point[trendMetric]!=null);
   if(!points.length){
-    card.append(element('p','暂无可计算的粉丝变化','empty'));
+    card.append(element('p',recent&&trendMetric==='percent'?'期初粉丝数为 0，无法计算百分比':'暂无可计算的粉丝变化','empty'));
     return card;
   }
-  const recent=points.at(-1);
-  const rate=recent.percent==null?'—':pct.format(recent.percent/100);
-  card.append(element('p','最近时段净增 '+fmt.format(recent.growth)+' 位 · 涨幅 '+rate,'note'));
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
   const canvasWidth=Math.max(300,$('follower-charts').clientWidth-30);
   const left=44,right=canvasWidth-26;
@@ -114,7 +123,7 @@ function drawChart(name,trend,points,high,low) {
   svg.setAttribute('viewBox','0 0 '+canvasWidth+' 160');
   svg.setAttribute('class','chart');
   svg.setAttribute('role','img');
-  svg.setAttribute('aria-label',name+'粉丝净增长趋势');
+  svg.setAttribute('aria-label',name+trendMetrics[trendMetric]+'趋势');
   function node(tag,attrs,text,owner=svg) {
     const item=document.createElementNS(svg.namespaceURI,tag);
     for(const [key,value] of Object.entries(attrs))item.setAttribute(key,value);
@@ -125,12 +134,13 @@ function drawChart(name,trend,points,high,low) {
   const x=index=>left+(index+.5)*plotWidth/Math.max(trend.length,1);
   for(const value of [low,0,high]){
     node('line',{x1:left,x2:right,y1:y(value),y2:y(value),class:'grid'});
-    node('text',{x:left-6,y:y(value)+4,'text-anchor':'end'},fmt.format(value));
+    node('text',{x:left-6,y:y(value)+4,'text-anchor':'end'},trendValue(value));
   }
   const width=Math.max(2,Math.min(12,plotWidth/trend.length*.6));
   for(const point of points){
-    const bar=node('rect',{x:x(point.index)-width/2,y:Math.min(y(point.growth),y(0)),width,
-      height:Math.max(2,Math.abs(y(point.growth)-y(0))),fill:colors[name]});
+    const value=point[trendMetric];
+    const bar=node('rect',{x:x(point.index)-width/2,y:Math.min(y(value),y(0)),width,
+      height:Math.max(2,Math.abs(y(value)-y(0))),fill:colors[name]});
     const percent=point.percent==null?'—':pct.format(point.percent/100);
     node('title',{},periodLabel(point.start)+' · @'+point.handle+' · '+fmt.format(point.growth)+' 位 · 涨幅 '+percent,bar);
   }
@@ -146,8 +156,10 @@ function draw() {
   const trend=data.trend;
   const points=trend.flatMap((period,index)=>period.accounts
     .filter(account=>account.growth!=null).map(account=>({...account,index,start:period.start})));
-  const high=Math.max(1,...points.map(p=>p.growth));
-  const low=Math.min(-1,...points.map(p=>p.growth));
+  const values=points.map(point=>point[trendMetric]).filter(value=>value!=null);
+  const high=Math.max(1,...values);
+  const low=Math.min(-1,...values);
+  switches($('trend-tabs'),trendMetrics,trendMetric,key=>{trendMetric=key;draw();});
   $('follower-charts').replaceChildren(...Object.keys(colors).map(name=>
     drawChart(name,trend,points.filter(point=>point.platform===name),high,low)));
   $('period-table').replaceChildren();
