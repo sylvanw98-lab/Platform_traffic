@@ -10,6 +10,7 @@
 .date-range{position:relative;flex:0 1 345px;min-width:min(100%,290px);margin:0}.date-range summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.date-range-fields{position:absolute;z-index:2;top:100%;right:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(335px,calc(100vw - 56px));padding:12px;background:#fff;border:1px solid #cbd8ce;border-radius:8px;box-shadow:0 8px 20px #172b2414}.date-range-fields input{min-width:0;width:100%}@media(max-width:600px){.date-range{flex:1 1 100%}.date-range-fields{left:0;right:auto}}
 
 .interaction-charts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:12px}.interaction-chart{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}.interaction-chart h3{font-size:1rem;margin:0 0 6px;overflow-wrap:anywhere}.interaction-chart .chart{height:auto;min-height:145px;margin-top:8px}
+.comparison-series{display:flex;flex-wrap:wrap;gap:6px 18px;padding:0;margin:6px 0;list-style:none}.comparison-series li{border-left:4px solid;padding-left:7px;overflow-wrap:anywhere}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -109,13 +110,21 @@ function trendPeriod(value) {
   if(unit==='month')return label.slice(0,7);
   return label.slice(0,4);
 }
-function interactionChart(title,points,trend,metricName,color,max,description) {
+function interactionChart(title,series,trend,metricName,max,compare=false) {
   const card=element('article',null,'interaction-chart');
   const heading=element('h3',title);
   heading.title=title;
   card.append(heading);
-  if(description)card.append(element('p',description,'note'));
-  if(!points.length){
+  if(compare && series.length){
+    const legend=element('ul',null,'comparison-series note');
+    for(const post of series){
+      const item=element('li',post.title);
+      item.style.borderColor=post.color;
+      legend.append(item);
+    }
+    card.append(legend);
+  }
+  if(!series.some(post=>post.points.length)){
     card.append(element('p','暂无此指标的采集数据','empty'));
     return card;
   }
@@ -140,15 +149,17 @@ function interactionChart(title,points,trend,metricName,color,max,description) {
     svgEl('line',{x1:left,x2:right,y1:y(value),y2:y(value),class:'grid'});
     svgEl('text',{x:left-6,y:y(value)+4,'text-anchor':'end'},fmt.format(value));
   }
-  let previous;
-  for(const point of points){
-    if(previous){
-      const line={x1:x(previous.index),x2:x(point.index),y1:y(previous.value),y2:y(point.value),stroke:color,'stroke-width':2};
-      if(point.index-previous.index>1)line['stroke-dasharray']='4 4';
-      svgEl('line',line);
+  for(const {points,color} of series){
+    let previous;
+    for(const point of points){
+      if(previous){
+        const line={x1:x(previous.index),x2:x(point.index),y1:y(previous.value),y2:y(point.value),stroke:color,'stroke-width':2};
+        if(point.index-previous.index>1)line['stroke-dasharray']='4 4';
+        svgEl('line',line);
+      }
+      svgEl('circle',{cx:x(point.index),cy:y(point.value),r:4,fill:color,stroke:'#fff','stroke-width':1});
+      previous=point;
     }
-    svgEl('circle',{cx:x(point.index),cy:y(point.value),r:4,fill:color,stroke:'#fff','stroke-width':1});
-    previous=point;
   }
   const marks=Math.min(trend.length,12,Math.max(2,Math.floor((right-left)/65)+1));
   for(let i=0;i<marks;i++){
@@ -159,7 +170,7 @@ function interactionChart(title,points,trend,metricName,color,max,description) {
   const tooltip=svgEl('g',{visibility:'hidden','pointer-events':'none','aria-hidden':'true'});
   const background=svgEl('rect',{height:24,rx:4,fill:'#fff',stroke:'#cbd8ce'},null,tooltip);
   const tooltipText=svgEl('text',{x:8,y:16},null,tooltip);
-  for(const point of points){
+  for(const point of series.flatMap(post=>post.points)){
     const cx=x(point.index),cy=y(point.value);
     const label=metricName+'：'+format(point.value);
     const hit=svgEl('circle',{cx,cy,r:10,fill:'transparent','aria-label':label},null,targets);
@@ -185,15 +196,13 @@ function draw() {
   const series=new Map();
   const selected=new Set(data?.trendPostIds||[]);
   for(const post of data?.posts||[]){
-    if(selected.has(post.id))series.set(post.id,{title:postName(post),color:seriesColors[series.size%seriesColors.length],points:[]});
+    if(selected.has(post.id))series.set(post.id,{title:postName(post),publishedAt:post.published_at,
+      color:seriesColors[series.size%seriesColors.length],points:[]});
   }
-  const aggregate=[];
   const table=[];
   let postMax=1;
-  let overallMax=1;
   const keys=Object.keys(names);
   for(const [index,period] of trend.entries()){
-    let value=0,count=0;
     for(const item of period.readings){
       const post=series.get(item.id);
       if(!post)continue;
@@ -201,30 +210,24 @@ function draw() {
         const metricValue=item[metric];
         post.points.push({index,value:metricValue});
         postMax=Math.max(postMax,metricValue);
-        value+=metricValue;count++;
       }
       table.push([time(period.start),post.title,...keys.map(key=>format(item[key]))]);
     }
-    if(count){
-      aggregate.push({index,value,count,expected:series.size});
-      overallMax=Math.max(overallMax,value);
-    }
   }
-  const overall=aggregate.at(-1);
   const metricName=names[metric];
-  const totalDescription=overall?'最近时段合计 '+format(overall.value)+' · '+overall.count+' / '+overall.expected+' 条帖子有数据':'';
-  const charts=[interactionChart('总体',aggregate,trend,metricName,'#17694f',overallMax,totalDescription)];
+  const recent=[...series.values()].filter(post=>post.publishedAt!=null)
+    .sort((a,b)=>b.publishedAt-a.publishedAt).slice(0,3);
+  const recentMax=Math.max(1,...recent.flatMap(post=>post.points.map(point=>point.value)));
+  const charts=[interactionChart('近 3 条数据',recent,trend,metricName,recentMax,true)];
   for(const post of series.values()){
-    const latest=post.points.at(-1);
-    charts.push(interactionChart(post.title,post.points,trend,metricName,post.color,postMax,
-      latest?'最近时段'+metricName+' '+format(latest.value):''));
+    charts.push(interactionChart(post.title,[post],trend,metricName,postMax));
   }
   $('plot').replaceChildren(...charts);
   $('trend-details').hidden=!table.length;
   $('trend-saves-column').hidden=!Object.hasOwn(names,'saves');
   $('trend-views-column').hidden=!Object.hasOwn(names,'impressions');
   rows($('period-table'),table.reverse(),2+keys.length,'暂无时段数据');
-  $('coverage').textContent=table.length?'总体为该时段有数据的帖子读数之和，每帖取该时段最后一次采集的累计读数。':'';
+  $('coverage').textContent=table.length?'每帖取该时段最后一次采集的累计读数。':'';
 }
 function postName(post) {
   const title=post.title?.trim();
