@@ -52,7 +52,7 @@ const format = number => number == null ? '暂无数据' : fmt.format(number);
 const time = (value,formatter=local) => value ? formatter.format(value) : '暂无记录';
 const initialPlatform = new URLSearchParams(location.search).get('platform') || '';
 let platform = Object.hasOwn(platforms, initialPlatform) ? initialPlatform : '';
-let unit = 'day', metric = 'impressions', data, requestId = 0;
+let unit = 'day', metric = platform==='Instagram'?'likes':'impressions', data, requestId = 0;
 
 function visibleMetrics() {
   const names = {...labels};
@@ -115,7 +115,9 @@ function interactionChart(title,points,trend,metricName,color,max,description) {
   card.append(heading);
   if(description)card.append(element('p',description,'note'));
   if(!points.length){
-    card.append(element('p','暂无此指标的采集数据','empty'));
+    const message=platform==='Instagram'&&metric==='impressions'
+      ? '暂无浏览量读数，可切换到点赞量或评论数。' : '暂无此指标的采集数据';
+    card.append(element('p',message,'empty'));
     return card;
   }
   const ns='http://www.w3.org/2000/svg';
