@@ -55,17 +55,10 @@ function switches(target,choices,selected,apply) {
 }
 function choosePlatform(next) {
   if(next===platform)return;
-  platform=next;
-  $('account').value='';
   const url=new URL(location.href);
-  if(next)url.searchParams.set('platform',next);else url.searchParams.delete('platform');
-  history.replaceState(null,'',url);
-  $('post-total').textContent='—';
-  $('profile-list').replaceChildren();
-  $('legend').replaceChildren();
-  $('plot').replaceChildren();
-  $('trend-details').hidden=true;
-  load();
+  if(next)url.searchParams.set('platform',next);
+  else url.searchParams.delete('platform');
+  location.assign(url);
 }
 function accountOptions(rows) {
   const target=$('account');

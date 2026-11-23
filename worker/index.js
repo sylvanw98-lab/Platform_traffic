@@ -1,4 +1,5 @@
 const html = '__DASHBOARD__';
+const platformHtml = '__PLATFORM_DASHBOARD__';
 const hourMs = 3600000;
 const offset = 8 * hourMs;
 const metrics = ['impressions', 'likes', 'comments'];
@@ -283,8 +284,29 @@ async function dashboard(env, query) {
       (!account || profile.handle.toLowerCase() === account.replace(/^@/, '').toLowerCase() ||
         options.some(item => item.platform === profile.platform && item.account === account) &&
           allProfiles.filter(item => item.platform === profile.platform).length === 1));
-  const trend = await followerTrend(db, profiles, windows, start, end);
+  const trend = platform
+    ? await postTrend(db, windows.filter(window => window.start < now).map(window => ({ ...window, end: Math.min(window.end, now) })), filter, args)
+    : await followerTrend(db, profiles, windows, start, end);
   return json({ posts, options, run: status, trend, unit, start, end, modes, profiles, accountFeedAt });
+}
+
+async function postTrend(db, windows, filter, args) {
+  const trend = [];
+  for (let i = 0; i < windows.length; i += 30) {
+    const batch = windows.slice(i, i + 30);
+    const rows = batch.map(() => '(?,?)').join(',');
+    const select = [...metrics, 'saves'].map(metric => `sum(b.${metric}-a.${metric}) AS ${metric},
+      count(b.${metric}-a.${metric}) AS ${metric}_coverage`).join(',');
+    const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
+      SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
+      LEFT JOIN posts p ON p.first_hour<=w.end AND ${filter}
+      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start
+      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end AND b.source=a.source
+      GROUP BY w.start,w.end ORDER BY w.start`)
+      .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
+    trend.push(...results);
+  }
+  return trend;
 }
 
 async function followerTrend(db, profiles, windows, start, end) {
@@ -422,7 +444,8 @@ export default {
     const url = new URL(request.url);
     try {
       if (request.method === 'GET' && url.pathname === '/') {
-        return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
+        const selected = url.searchParams.get('platform');
+        return new Response(Object.hasOwn(accountFeeds, selected) ? platformHtml : html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env, url.searchParams);
       if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
