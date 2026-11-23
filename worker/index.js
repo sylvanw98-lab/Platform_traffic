@@ -299,7 +299,7 @@ async function dashboard(env, query) {
   const trendFilter = hasPostFilter ? filter + ' AND p.id IN (SELECT value FROM json_each(?))' : filter;
   const trendArgs = hasPostFilter ? [...args, JSON.stringify(matchingPosts.map(post=>post.id))] : args;
   const trend = platform
-    ? await postTrend(db, windows.filter(window => window.start < now).map(window => ({ ...window, end: Math.min(window.end, now) })), trendFilter, trendArgs)
+    ? await postTrend(db, windows, trendFilter, trendArgs)
     : await followerTrend(db, profiles, windows, start, end);
   return json({ posts, options, run: status, trend, trendPostCount: matchingPosts.length, unit, start, end, modes, profiles, accountFeedAt });
 }
@@ -313,9 +313,17 @@ async function postTrend(db, windows, filter, args) {
       count(b.${metric}-a.${metric}) AS ${metric}_coverage`).join(',');
     const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
       SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
-      LEFT JOIN posts p ON p.first_hour<=w.end AND ${filter}
-      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start
-      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end AND b.source=a.source
+      LEFT JOIN posts p ON p.first_hour<w.end AND ${filter}
+      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=(
+        SELECT s.hour FROM snapshots s WHERE s.post_id=p.id AND s.hour>=w.start AND s.hour<w.end
+        AND s.captured_at<w.end ORDER BY s.hour DESC LIMIT 1
+      )
+      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=coalesce(
+        (SELECT s.hour FROM snapshots s WHERE s.post_id=p.id AND s.source=b.source
+          AND s.hour<w.start AND s.captured_at<w.start ORDER BY s.hour DESC LIMIT 1),
+        (SELECT s.hour FROM snapshots s WHERE s.post_id=p.id AND s.source=b.source
+          AND s.hour>=w.start AND s.hour<b.hour ORDER BY s.hour LIMIT 1)
+      )
       GROUP BY w.start,w.end ORDER BY w.start`)
       .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
     trend.push(...results);

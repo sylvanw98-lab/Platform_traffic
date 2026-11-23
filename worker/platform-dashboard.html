@@ -5,9 +5,9 @@
 .platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .post-link{border:0;padding:0;min-height:0;background:transparent;color:var(--green);text-align:left;text-decoration:underline;text-underline-offset:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 
-.trend-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0 8px}.post-picker{position:relative;margin:0;flex:1 1 230px;max-width:100%}.post-picker summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.post-picker-options{position:absolute;z-index:2;top:100%;left:0;min-width:min(450px,80vw);max-height:240px;overflow:auto;background:white;border:1px solid #cbd8ce;border-radius:8px;padding:6px;box-shadow:0 8px 20px #172b2714}.post-picker-options label{display:flex;align-items:center;gap:8px;padding:6px}.post-picker-options input{min-height:0;flex:none}.post-picker-options span{overflow-wrap:anywhere}
+.trend-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0 8px}.post-picker{position:relative;margin:0;flex:0 1 205px;max-width:100%}.post-picker summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.post-picker-options{position:absolute;z-index:2;top:100%;left:0;min-width:min(450px,80vw);max-height:240px;overflow:auto;background:white;border:1px solid #cbd8ce;border-radius:8px;padding:6px;box-shadow:0 8px 20px #172b2714}.post-picker-options label{display:flex;align-items:center;gap:8px;padding:6px}.post-picker-options input{min-height:0;flex:none}.post-picker-options span{overflow-wrap:anywhere}
 
-.date-range{position:relative;flex:0 1 245px;margin:0}.date-range summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.date-range-fields{position:absolute;z-index:2;top:100%;right:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(335px,calc(100vw - 56px));padding:12px;background:#fff;border:1px solid #cbd8ce;border-radius:8px;box-shadow:0 8px 20px #172b2414}.date-range-fields input{min-width:0;width:100%}@media(max-width:600px){.date-range{flex:1 1 100%}.date-range-fields{left:0;right:auto}}
+.date-range{position:relative;flex:0 1 345px;min-width:min(100%,290px);margin:0}.date-range summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.date-range-fields{position:absolute;z-index:2;top:100%;right:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(335px,calc(100vw - 56px));padding:12px;background:#fff;border:1px solid #cbd8ce;border-radius:8px;box-shadow:0 8px 20px #172b2414}.date-range-fields input{min-width:0;width:100%}@media(max-width:600px){.date-range{flex:1 1 100%}.date-range-fields{left:0;right:auto}}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -27,7 +27,7 @@
 <summary id="date-selection">发布日期 · 全部</summary>
 <div class="date-range-fields"><label>开始日期<input type="date" id="published-from"></label><label>结束日期<input type="date" id="published-to"></label></div>
 </details>
-<button type="submit">应用趋势筛选</button><button type="reset">清除</button>
+<button type="submit">筛选</button><button type="reset">清除</button>
 </form>
 <p id="trend-filter-status" class="note" role="status"></p>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
@@ -104,7 +104,7 @@ function draw() {
   const plot=$('plot');plot.replaceChildren();
   $('trend-details').hidden=!trend.length;
   rows($('period-table'),trend.slice().reverse().map(p=>[time(p.start),format(p[metric]),p[metric+'_coverage']+' / '+p.expected+(p[metric+'_coverage']<p.expected?' · 数据不完整':'')]),3,'暂无时段数据');
-  $('coverage').textContent=trend.length ? '趋势使用同一来源的两端采集数据。' : '';
+  $('coverage').textContent=trend.length ? '每个趋势点至少需要两次同一来源的采集，变化计入最新一次采集所在的时段。' : '';
   if(!points.length){plot.append(element('p','暂无可计算的趋势数据','empty'));return;}
   const ns='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(ns,'svg');
