@@ -104,7 +104,7 @@ async function syncPosts(env, hour) {
   for (const post of posts.values()) {
     statements.push(env.DB.prepare(`INSERT INTO posts (id,platform,account,url,title,active,first_hour) VALUES (?,?,?,?,?,1,?)
       ON CONFLICT(id) DO UPDATE SET platform=excluded.platform, account=excluded.account,
-      url=excluded.url, title=excluded.title, active=1, parent_id=NULL`)
+      url=excluded.url, title=coalesce(nullif(excluded.title,''),posts.title), active=1, parent_id=NULL`)
       .bind(post.id, post.platform, post.account, post.url, post.title, hour));
   }
   statements.push(env.DB.prepare(`UPDATE posts SET active=1 WHERE parent_id IN
@@ -410,6 +410,15 @@ async function saveWebProfile(request, env) {
     'profile:' + profile.platform + ':' + profile.handle.toLowerCase(), JSON.stringify(profile))));
   return json({ saved: profiles.length });
 }
+function capturedTitle(entry) {
+  return typeof entry?.title === 'string' ? entry.title.trim().slice(0, 160) : '';
+}
+
+function hasWebMetrics(entry) {
+  return metrics.some(metric => count(entry[metric]) != null) ||
+    (entry.id.startsWith('tiktok:') && count(entry.saves) != null);
+}
+
 async function saveWebSnapshot(request, env) {
   if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
     return json({ error: '未授权' }, 403);
@@ -417,9 +426,10 @@ async function saveWebSnapshot(request, env) {
   const entries = await request.json();
   if (!Array.isArray(entries) || !entries.length || entries.length > 50 ||
       entries.some(entry => typeof entry?.id !== 'string' || !entry.id ||
-        (metrics.every(metric => count(entry[metric]) == null) && !(entry.id.startsWith('tiktok:') && count(entry.saves) != null)))) return json({ error: '网页指标格式无效' }, 400);
+        (!hasWebMetrics(entry) && !capturedTitle(entry)))) return json({ error: '网页指标格式无效' }, 400);
   const now = Date.now();
   const discovered = [];
+  const titles = [];
   const writes = [];
   for (const entry of entries) {
     if (entry.parentId != null) {
@@ -434,9 +444,14 @@ async function saveWebSnapshot(request, env) {
         (id,platform,account,url,title,active,first_hour,parent_id) VALUES (?,?,?,?,?,1,?,?)
         ON CONFLICT(id) DO UPDATE SET active=1, url=excluded.url, account=excluded.account, title=excluded.title
         WHERE posts.parent_id=excluded.parent_id`).bind(entry.id, 'Instagram', parent.account || owner,
-          url.origin + url.pathname, typeof entry.title === 'string' ? entry.title.trim().slice(0, 160) : '',
+          url.origin + url.pathname, capturedTitle(entry),
           hourOf(now), parent.id));
     }
+    const title = capturedTitle(entry);
+    if (title && entry.parentId == null) {
+      titles.push(env.DB.prepare("UPDATE posts SET title=? WHERE id=? AND active=1 AND title=''").bind(title, entry.id));
+    }
+    if (!hasWebMetrics(entry)) continue;
     writes.push(env.DB.prepare(`INSERT INTO snapshots
       (post_id,hour,captured_at,impressions,likes,comments,source,saves)
       SELECT id,?,?,?,?,?,'web',? FROM posts WHERE id=? AND active=1
@@ -444,8 +459,9 @@ async function saveWebSnapshot(request, env) {
         likes=excluded.likes,comments=excluded.comments,saves=coalesce(excluded.saves,snapshots.saves) WHERE snapshots.source='web'`)
       .bind(hourOf(now), now, ...metrics.map(metric => count(entry[metric])), entry.id.startsWith('tiktok:') ? count(entry.saves) : null, entry.id));
   }
-  const results = (await env.DB.batch([...discovered, ...writes])).slice(discovered.length);
-  return json({ saved: results.reduce((sum, result) => sum + result.meta.changes, 0) });
+  const results = (await env.DB.batch([...discovered, ...titles, ...writes])).slice(discovered.length);
+  const named = results.slice(0, titles.length).reduce((sum, result) => sum + result.meta.changes, 0);
+  return json({ named, saved: results.slice(titles.length).reduce((sum, result) => sum + result.meta.changes, 0) });
 }
 async function mcp(request, env) {
   const rpc = await request.json();

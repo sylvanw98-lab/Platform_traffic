@@ -132,6 +132,16 @@ function draw() {
   }
   plot.append(svg);
 }
+function postName(post) {
+  const title=post.title?.trim();
+  if(title) return title;
+  const [handle, resource]=new URL(post.url).pathname.split('/').filter(Boolean);
+  if(handle && (post.platform==='TikTok' && handle.startsWith('@') || post.platform==='Instagram' && !resource)){
+    return handle.startsWith('@')?handle:'@'+handle;
+  }
+  return post.account?.trim()||post.platform;
+}
+
 function renderProfiles(profiles) {
   const section=$('profiles');
   const list=$('profile-list');
@@ -171,8 +181,8 @@ function render() {
     return card;
   }));
   rows($('posts'),posts.map(post=>{
-    const title=post.title?.trim();
-    const link=element('a',title||'查看原帖','post-link');
+    const title=postName(post);
+    const link=element('a',title,'post-link');
     link.href=post.url;link.target='_blank';link.rel='noopener noreferrer';
     if(title)link.title=title;
     return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),post.platform === 'TikTok' ? format(post.saves) : '—',post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
