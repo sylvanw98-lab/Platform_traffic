@@ -239,6 +239,31 @@ function parseDay(value) {
   return Number.isFinite(time) && new Date(time + offset).toISOString().slice(0, 10) === value ? time : NaN;
 }
 
+async function collectionLog(db, query) {
+  const platform = query.get('platform') || '';
+  const day = query.get('date') || '';
+  const today = floorPeriod(Date.now(), 'day');
+  const dayStart = day ? parseDay(day) : today - 29 * 24 * hourMs;
+  if (!Number.isFinite(dayStart) || (platform && !['X', 'Instagram', 'TikTok'].includes(platform))) {
+    return json({ error: '请选择有效的日期和平台' }, 400);
+  }
+  let start = dayStart;
+  let end = (day ? dayStart : today) + 24 * hourMs;
+  if (query.has('startHour') || query.has('endHour')) {
+    const from = query.get('startHour');
+    const to = query.get('endHour');
+    if (!day || !/^\d{1,2}$/.test(from) || !/^\d{1,2}$/.test(to) || +from >= +to || +to > 24) {
+      return json({ error: '请选择有效的日期和小时范围' }, 400);
+    }
+    start = dayStart + +from * hourMs;
+    end = dayStart + +to * hourMs;
+  }
+  const { results } = await db.prepare(`SELECT platform,handle,captured_at AS sampledAt,followers
+    FROM profile_snapshots WHERE captured_at>=? AND captured_at<? AND (?='' OR platform=?)
+    ORDER BY captured_at DESC,platform,handle`).bind(start, end, platform, platform).all();
+  return json({ records: results });
+}
+
 async function dashboard(env, query) {
   const db = env.DB;
   const unit = ['hour', 'day', 'month', 'year'].includes(query.get('unit')) ? query.get('unit') : 'day';
@@ -474,6 +499,7 @@ export default {
         return new Response(Object.hasOwn(accountFeeds, selected) ? platformHtml : html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env, url.searchParams);
+      if (request.method === 'GET' && url.pathname === '/api/collection-log') return await collectionLog(env.DB, url.searchParams);
       if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
       if (request.method === 'POST' && url.pathname === '/api/web-profiles') return await saveWebProfile(request, env);
       if (request.method === 'POST' && url.pathname === '/api/web-snapshots') return await saveWebSnapshot(request, env);
