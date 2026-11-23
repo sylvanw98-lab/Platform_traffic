@@ -263,7 +263,7 @@ async function dashboard(env, query) {
   const [{ results: posts }, { results: options }, run, accountFeedAt, { results: storedProfiles }] = await Promise.all([
     db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.saves,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
       ON s.post_id=p.id AND s.hour=(SELECT t.hour FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? ORDER BY t.hour DESC LIMIT 1)
-      WHERE ${filter} ORDER BY s.impressions DESC, p.id`).bind(end, ...args).all(),
+      WHERE ${filter} ORDER BY p.published_at DESC, p.first_hour DESC, p.id`).bind(end, ...args).all(),
     db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
     getSetting(db, 'run'),
     getSetting(db, 'accountFeedAt'),
