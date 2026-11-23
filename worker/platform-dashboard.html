@@ -4,6 +4,8 @@
 :root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:20px 0}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
 .platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .post-link{border:0;padding:0;min-height:0;background:transparent;color:var(--green);text-align:left;text-decoration:underline;text-underline-offset:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+
+.trend-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0 8px}.post-picker{position:relative;margin:0;flex:1 1 230px;max-width:100%}.post-picker summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.post-picker-options{position:absolute;z-index:2;top:100%;left:0;min-width:min(450px,80vw);max-height:240px;overflow:auto;background:white;border:1px solid #cbd8ce;border-radius:8px;padding:6px;box-shadow:0 8px 20px #172b2714}.post-picker-options label{display:flex;align-items:center;gap:8px;padding:6px}.post-picker-options input{min-height:0;flex:none}.post-picker-options span{overflow-wrap:anywhere}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -17,6 +19,13 @@
 <button type="submit">应用筛选</button><button type="reset">重置</button></form>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
+<form id="trend-filters" class="trend-filters" aria-label="互动趋势筛选">
+<details id="post-picker" class="post-picker"><summary id="post-selection">帖子名称 · 全部</summary><div id="post-options" class="post-picker-options"></div></details>
+<label>发布开始日期<input type="date" id="published-from"></label>
+<label>发布结束日期<input type="date" id="published-to"></label>
+<button type="submit">应用趋势筛选</button><button type="reset">清除</button>
+</form>
+<p id="trend-filter-status" class="note" role="status"></p>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
 <div id="plot"></div><p class="note" id="coverage"></p>
 <details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段开始</th><th>净变化</th><th>采集覆盖</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
@@ -25,6 +34,7 @@
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
+const selectedPosts=new Set();
 const labels = { impressions:'浏览量 / 曝光量',likes:'点赞量',comments:'评论数' };
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
@@ -129,8 +139,34 @@ function postName(post) {
   return post.account?.trim()||post.platform;
 }
 
+function updatePostSelection() {
+  $('post-selection').textContent=selectedPosts.size?'帖子名称 · 已选 '+selectedPosts.size+' 条':'帖子名称 · 全部';
+}
+function renderPostOptions(posts) {
+  const list=$('post-options');
+  list.replaceChildren();
+  for(const post of posts){
+    const label=element('label');
+    const checkbox=element('input');
+    checkbox.type='checkbox';
+    checkbox.value=post.id;
+    checkbox.checked=selectedPosts.has(post.id);
+    checkbox.onchange=()=>{
+      if(checkbox.checked)selectedPosts.add(post.id);
+      else selectedPosts.delete(post.id);
+      updatePostSelection();
+    };
+    const published=post.published_at==null?'发布日期未知':time(post.published_at).slice(0,10);
+    label.append(checkbox,element('span',postName(post)+' · '+published));
+    list.append(label);
+  }
+  if(!posts.length)list.append(element('p','暂无可选帖子','note'));
+  updatePostSelection();
+}
 function render() {
   const {posts,run}=data;
+  renderPostOptions(posts);
+  $('trend-filter-status').textContent='趋势包含 '+data.trendPostCount+' 条帖子';
   const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
   const webPlatforms=[...new Set(data.options.map(item=>item.platform))].filter(item=>(!platform||item===platform)&&data.modes?.[item]==='web');
   if(webPlatforms.length)status.unshift(webPlatforms.join('、')+' 使用网页采集');
@@ -167,6 +203,12 @@ async function load() {
   try {
     const query=new URLSearchParams({unit});
     if(platform) query.set('platform',platform);
+    const publishedFrom=$('published-from').value;
+    const publishedTo=$('published-to').value;
+    if(publishedFrom&&publishedTo&&publishedFrom>publishedTo)throw new Error('发布开始日期须早于或等于结束日期');
+    for(const post of selectedPosts)query.append('post',post);
+    if(publishedFrom)query.set('publishedFrom',publishedFrom);
+    if(publishedTo)query.set('publishedTo',publishedTo);
     for(const key of ['account','from','to']) if($(key).value) query.set(key,$(key).value);
     if($('from').value&&$('to').value&&$('from').value>$('to').value)throw new Error('开始日期须早于或等于结束日期');
     const response=await fetch('/api/dashboard?'+query);const result=await response.json();
@@ -176,6 +218,16 @@ async function load() {
   } catch(error) {if(id===requestId)$('status').textContent=error.message;}
 }
 $('filters').onsubmit=event=>{event.preventDefault();load();};
-$('filters').onreset=()=>setTimeout(load,0);
+$('filters').onreset=()=>{
+  selectedPosts.clear();
+  setTimeout(load,0);
+};
+$('trend-filters').onsubmit=event=>{event.preventDefault();$('post-picker').open=false;load();};
+$('trend-filters').onreset=()=>{
+  selectedPosts.clear();
+  $('post-picker').open=false;
+  setTimeout(load,0);
+};
+$('account').onchange=()=>{selectedPosts.clear();updatePostSelection();};
 draw();load();
 </script></body></html>

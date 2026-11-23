@@ -22,7 +22,8 @@
 <details id="trend-details"><summary>查看粉丝变化明细</summary><div class="table-wrap"><table>
 <thead><tr><th>时段</th><th>账号</th><th>净增粉丝</th><th>涨幅</th></tr></thead><tbody id="period-table"></tbody>
 </table></div></details>
-</section></main>
+</section>
+<section id="collection-log" class="panel"><h2>采集日志</h2><div class="table-wrap" id="collection-log-table"></div></section></main>
 <script>
 const $ = id => document.getElementById(id);
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
@@ -103,22 +104,24 @@ function tickIndices(length,width) {
 function trendValue(value) {
   return trendMetric==='percent'?pct.format(value/100):fmt.format(value);
 }
-function followerCountTable(points) {
-  const details=element('details');
-  details.open=true;
-  details.append(element('summary','各时段粉丝数量'));
-  const wrap=element('div',null,'table-wrap');
+function renderCollectionLog(trend) {
+  const list=$('collection-log-table');
+  const records=trend.flatMap(period=>period.accounts
+    .filter(account=>account.followers!=null)
+    .map(account=>({...account,start:period.start})))
+    .sort((a,b)=>b.start-a.start||b.sampledAt-a.sampledAt||a.platform.localeCompare(b.platform));
+  if(!records.length){list.replaceChildren(element('p','暂无采集记录','note'));return;}
   const table=element('table');
   const heading=table.createTHead().insertRow();
-  for(const label of ['时段','账号','粉丝数量']) heading.append(element('th',label));
+  for(const label of ['时段','平台','账号','采集时间','粉丝数量'])heading.append(element('th',label));
   const body=table.createTBody();
-  for(const point of points.slice().reverse()){
+  for(const entry of records){
     const row=body.insertRow();
-    for(const value of [periodLabel(point.start),'@'+point.handle,fmt.format(point.followers)]) row.insertCell().textContent=value;
+    for(const value of [periodLabel(entry.start),entry.platform,'@'+entry.handle,date(entry.sampledAt),fmt.format(entry.followers)]){
+      row.insertCell().textContent=value;
+    }
   }
-  wrap.append(table);
-  details.append(wrap);
-  return details;
+  list.replaceChildren(table);
 }
 function drawChart(name,trend,observations,high,low) {
   const card=element('article',null,'follower-chart');
@@ -173,7 +176,6 @@ function drawChart(name,trend,observations,high,low) {
     node('text',{x:x(index),y:144,'text-anchor':anchor},axisLabel(trend[index].start));
   }
   card.append(svg);
-  if(showCounts)card.append(followerCountTable(points));
   return card;
 }
 function draw() {
@@ -210,6 +212,7 @@ async function load() {
     if(!response.ok)throw new Error(result.error||'读取失败');
     data=result;
     renderProfiles(data.profiles,data.posts);
+    renderCollectionLog(data.trend);
     $('last').textContent=data.accountFeedAt?'最近采集 '+date(data.accountFeedAt):'';
     const web=[...new Set(data.profiles.map(p=>p.platform))].filter(p=>data.modes?.[p]==='web');
     $('status').textContent=web.length?web.join('、')+' 使用网页采集':'等待账号采集';

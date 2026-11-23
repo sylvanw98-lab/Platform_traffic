@@ -284,10 +284,26 @@ async function dashboard(env, query) {
       (!account || profile.handle.toLowerCase() === account.replace(/^@/, '').toLowerCase() ||
         options.some(item => item.platform === profile.platform && item.account === account) &&
           allProfiles.filter(item => item.platform === profile.platform).length === 1));
+  const selected = new Set(query.getAll('post'));
+  const publishedFrom = parseDay(query.get('publishedFrom'));
+  const publishedTo = parseDay(query.get('publishedTo'));
+  if (platform && ((query.has('publishedFrom') && !Number.isFinite(publishedFrom)) ||
+      (query.has('publishedTo') && !Number.isFinite(publishedTo)) || publishedFrom > publishedTo)) {
+    return json({ error: '请选择有效的帖子发布日期范围' }, 400);
+  }
+  const hasDateFilter = Number.isFinite(publishedFrom) || Number.isFinite(publishedTo);
+  const hasPostFilter = selected.size > 0 || hasDateFilter;
+  const matchingPosts = posts.filter(post =>
+    (!selected.size || selected.has(post.id)) &&
+    (!hasDateFilter || post.published_at != null &&
+      (!Number.isFinite(publishedFrom) || post.published_at >= publishedFrom) &&
+      (!Number.isFinite(publishedTo) || post.published_at < publishedTo + 24 * hourMs)));
+  const trendFilter = hasPostFilter ? filter + ' AND p.id IN (SELECT value FROM json_each(?))' : filter;
+  const trendArgs = hasPostFilter ? [...args, JSON.stringify(matchingPosts.map(post=>post.id))] : args;
   const trend = platform
-    ? await postTrend(db, windows.filter(window => window.start < now).map(window => ({ ...window, end: Math.min(window.end, now) })), filter, args)
+    ? await postTrend(db, windows.filter(window => window.start < now).map(window => ({ ...window, end: Math.min(window.end, now) })), trendFilter, trendArgs)
     : await followerTrend(db, profiles, windows, start, end);
-  return json({ posts, options, run: status, trend, unit, start, end, modes, profiles, accountFeedAt });
+  return json({ posts, options, run: status, trend, trendPostCount: matchingPosts.length, unit, start, end, modes, profiles, accountFeedAt });
 }
 
 async function postTrend(db, windows, filter, args) {
@@ -327,7 +343,7 @@ async function followerTrend(db, profiles, windows, start, end) {
     while (events[cursors[index]]?.captured_at < window.end) last = events[cursors[index]++];
     const baseline = first.previous ?? (first !== last ? first.followers : null);
     const growth = baseline == null ? null : last.followers - baseline;
-    return { platform, handle, followers: last.followers, growth, percent: baseline > 0 ? growth / baseline * 100 : null };
+    return { platform, handle, followers: last.followers, sampledAt: last.captured_at, growth, percent: baseline > 0 ? growth / baseline * 100 : null };
   }) }));
 }
 function profileCount(value) {
@@ -387,10 +403,10 @@ async function saveWebSnapshot(request, env) {
   const entries = await request.json();
   if (!Array.isArray(entries) || !entries.length || entries.length > 50 ||
       entries.some(entry => typeof entry?.id !== 'string' || !entry.id ||
-        (!hasWebMetrics(entry) && !capturedTitle(entry)))) return json({ error: '网页指标格式无效' }, 400);
+        (!hasWebMetrics(entry) && !capturedTitle(entry) && !Number.isSafeInteger(entry.publishedAt)))) return json({ error: '网页指标格式无效' }, 400);
   const now = Date.now();
   const discovered = [];
-  const titles = [];
+  const metadata = [];
   const writes = [];
   for (const entry of entries) {
     if (entry.url != null || entry.platform != null) {
@@ -403,8 +419,11 @@ async function saveWebSnapshot(request, env) {
           post.id, post.platform, post.account, post.url, post.title, hourOf(now)));
     }
     const title = capturedTitle(entry);
-    if (title && entry.url == null) {
-      titles.push(env.DB.prepare("UPDATE posts SET title=? WHERE id=? AND active=1 AND title=''").bind(title, entry.id));
+    const publishedAt = Number.isSafeInteger(entry.publishedAt) && entry.publishedAt > 0 && entry.publishedAt <= now
+      ? entry.publishedAt : null;
+    if (publishedAt != null || (title && entry.url == null)) {
+      metadata.push(env.DB.prepare(`UPDATE posts SET title=coalesce(nullif(title,''),?),
+        published_at=coalesce(?,published_at) WHERE id=? AND active=1`).bind(title, publishedAt, entry.id));
     }
     if (!hasWebMetrics(entry)) continue;
     writes.push(env.DB.prepare(`INSERT INTO snapshots
@@ -414,9 +433,9 @@ async function saveWebSnapshot(request, env) {
         likes=excluded.likes,comments=excluded.comments,saves=coalesce(excluded.saves,snapshots.saves) WHERE snapshots.source='web'`)
       .bind(hourOf(now), now, ...metrics.map(metric => count(entry[metric])), entry.id.startsWith('tiktok:') ? count(entry.saves) : null, entry.id));
   }
-  const results = (await env.DB.batch([...discovered, ...titles, ...writes])).slice(discovered.length);
-  const named = results.slice(0, titles.length).reduce((sum, result) => sum + result.meta.changes, 0);
-  const saved = results.slice(titles.length).reduce((sum, result) => sum + result.meta.changes, 0);
+  const results = (await env.DB.batch([...discovered, ...metadata, ...writes])).slice(discovered.length);
+  const named = results.slice(0, metadata.length).reduce((sum, result) => sum + result.meta.changes, 0);
+  const saved = results.slice(metadata.length).reduce((sum, result) => sum + result.meta.changes, 0);
   if (discovered.length && saved) await putSetting(env.DB, 'accountFeedAt', now);
   return json({ named, saved });
 }

@@ -36,6 +36,13 @@
       "version": "6",
       "idx": 4,
       "when": 1795423200000
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795426800000,
+      "tag": "0005_post_publication",
+      "breakpoints": true
     }
   ]
 }
