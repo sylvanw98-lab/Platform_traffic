@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>社媒发布数据看板</title>
 <style>
 :root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:20px 0}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
-.platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .post-link{border:0;padding:0;min-height:0;background:transparent;color:var(--green);text-align:left;text-decoration:underline;text-underline-offset:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 
 .trend-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0 8px}.post-picker{position:relative;margin:0;flex:0 1 205px;max-width:100%}.post-picker summary{border:1px solid #cbd8ce;border-radius:8px;padding:9px 11px;min-height:40px}.post-picker-options{position:absolute;z-index:2;top:100%;left:0;min-width:min(450px,80vw);max-height:240px;overflow:auto;background:white;border:1px solid #cbd8ce;border-radius:8px;padding:6px;box-shadow:0 8px 20px #172b2714}.post-picker-options label{display:flex;align-items:center;gap:8px;padding:6px}.post-picker-options input{min-height:0;flex:none}.post-picker-options span{overflow-wrap:anywhere}
@@ -34,9 +34,9 @@
 <p id="trend-filter-status" class="note" role="status"></p>
 <div id="legend" class="legend" aria-label="趋势指标"></div>
 <div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div><p class="note" id="coverage"></p>
-<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段</th><th>帖子</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="trend-saves-column">收藏数</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
+<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段</th><th>帖子</th><th id="trend-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="trend-saves-column">收藏数</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
-<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th id="post-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
@@ -55,6 +55,7 @@ let platform = Object.hasOwn(platforms, initialPlatform) ? initialPlatform : '';
 let unit = 'day', metric = platform==='Instagram'?'likes':'impressions', data, requestId = 0;
 
 function visibleMetrics() {
+  if(platform==='Instagram')return {likes:labels.likes,comments:labels.comments};
   const names = {...labels};
   if (platform && (platform !== 'X' || data?.modes?.X === 'web')) names.impressions = '浏览量';
   if (platform === 'TikTok') names.saves = '收藏数';
@@ -115,9 +116,7 @@ function interactionChart(title,points,trend,metricName,color,max,description) {
   card.append(heading);
   if(description)card.append(element('p',description,'note'));
   if(!points.length){
-    const message=platform==='Instagram'&&metric==='impressions'
-      ? '暂无浏览量读数，可切换到点赞量或评论数。' : '暂无此指标的采集数据';
-    card.append(element('p',message,'empty'));
+    card.append(element('p','暂无此指标的采集数据','empty'));
     return card;
   }
   const ns='http://www.w3.org/2000/svg';
@@ -148,16 +147,32 @@ function interactionChart(title,points,trend,metricName,color,max,description) {
       if(point.index-previous.index>1)line['stroke-dasharray']='4 4';
       svgEl('line',line);
     }
-    const dot=svgEl('circle',{cx:x(point.index),cy:y(point.value),r:4,fill:color,stroke:'#fff','stroke-width':1});
-    const label=point.capturedAt?time(point.capturedAt):trendPeriod(trend[point.index].start);
-    const coverage=point.count==null?'':' · '+point.count+' / '+point.expected+' 条有数据';
-    svgEl('title',{},label+' · '+metricName+' '+format(point.value)+coverage,dot);
+    svgEl('circle',{cx:x(point.index),cy:y(point.value),r:4,fill:color,stroke:'#fff','stroke-width':1});
     previous=point;
   }
   const marks=Math.min(trend.length,12,Math.max(2,Math.floor((right-left)/65)+1));
   for(let i=0;i<marks;i++){
     const index=Math.round(i*(trend.length-1)/Math.max(marks-1,1));
     svgEl('text',{x:x(index),y:163,'text-anchor':i===0?'start':i===marks-1?'end':'middle'},trendPeriod(trend[index].start));
+  }
+  const targets=svgEl('g',{});
+  const tooltip=svgEl('g',{visibility:'hidden','pointer-events':'none','aria-hidden':'true'});
+  const background=svgEl('rect',{height:24,rx:4,fill:'#fff',stroke:'#cbd8ce'},null,tooltip);
+  const tooltipText=svgEl('text',{x:8,y:16},null,tooltip);
+  for(const point of points){
+    const cx=x(point.index),cy=y(point.value);
+    const label=metricName+'：'+format(point.value);
+    const hit=svgEl('circle',{cx,cy,r:10,fill:'transparent','aria-label':label},null,targets);
+    hit.addEventListener('pointerenter',()=>{
+      tooltipText.textContent=label;
+      const boxWidth=Math.ceil(tooltipText.getComputedTextLength())+16;
+      const boxX=Math.max(0,Math.min(width-boxWidth,cx-boxWidth/2));
+      const boxY=cy<36 ? cy+11 : cy-35;
+      background.setAttribute('width',boxWidth);
+      tooltip.setAttribute('transform',`translate(${boxX} ${boxY})`);
+      tooltip.setAttribute('visibility','visible');
+    });
+    hit.addEventListener('pointerleave',()=>tooltip.setAttribute('visibility','hidden'));
   }
   card.append(svg);
   return card;
@@ -176,7 +191,7 @@ function draw() {
   const table=[];
   let postMax=1;
   let overallMax=1;
-  const hasSaves=platform==='TikTok';
+  const keys=Object.keys(names);
   for(const [index,period] of trend.entries()){
     let value=0,count=0;
     for(const item of period.readings){
@@ -184,12 +199,11 @@ function draw() {
       if(!post)continue;
       if(item[metric]!=null){
         const metricValue=item[metric];
-        post.points.push({index,value:metricValue,capturedAt:item.capturedAt});
+        post.points.push({index,value:metricValue});
         postMax=Math.max(postMax,metricValue);
         value+=metricValue;count++;
       }
-      table.push([time(period.start),post.title,...Object.keys(labels).map(key=>format(item[key])),
-        ...(hasSaves?[format(item.saves)]:[])]);
+      table.push([time(period.start),post.title,...keys.map(key=>format(item[key]))]);
     }
     if(count){
       aggregate.push({index,value,count,expected:series.size});
@@ -207,8 +221,9 @@ function draw() {
   }
   $('plot').replaceChildren(...charts);
   $('trend-details').hidden=!table.length;
-  $('trend-saves-column').hidden=!hasSaves;
-  rows($('period-table'),table.reverse(),hasSaves?6:5,'暂无时段数据');
+  $('trend-saves-column').hidden=!Object.hasOwn(names,'saves');
+  $('trend-views-column').hidden=!Object.hasOwn(names,'impressions');
+  rows($('period-table'),table.reverse(),2+keys.length,'暂无时段数据');
   $('coverage').textContent=table.length?'总体为该时段有数据的帖子读数之和，每帖取该时段最后一次采集的累计读数。':'';
 }
 function postName(post) {
@@ -268,15 +283,18 @@ function render() {
   $('last').textContent=data.accountFeedAt?'最近采集 '+time(data.accountFeedAt):'';
   $('post-count').textContent='共 '+posts.length+' 条';
   options($('account'),data.options.filter(p=>!platform||p.platform===platform).map(p=>p.account),'全部账号');
-  $('cards').classList.toggle('four',platform==='TikTok');
-  $('cards').replaceChildren(...Object.entries(visibleMetrics()).map(([key,label])=>{
+  const metrics=visibleMetrics();
+  const keys=Object.keys(metrics);
+  $('cards').classList.toggle('two',keys.length===2);
+  $('cards').classList.toggle('four',keys.length===4);
+  $('cards').replaceChildren(...Object.entries(metrics).map(([key,label])=>{
     const values=posts.map(post=>post[key]).filter(value=>value!=null);
     const card=element('article',null,'card');
     card.append(element('span',label,'sub'),element('strong',format(values.length?values.reduce((a,b)=>a+b,0):null)),element('p','累计值 · '+values.length+'/'+posts.length+' 条有数据','note'));
     return card;
   }));
-  const showSaves=platform==='TikTok';
-  $('post-saves-column').hidden=!showSaves;
+  $('post-saves-column').hidden=!Object.hasOwn(metrics,'saves');
+  $('post-views-column').hidden=!Object.hasOwn(metrics,'impressions');
   rows($('posts'),posts.map(post=>{
     const title=postName(post);
     const link=element('button',title,'post-link');
@@ -287,9 +305,9 @@ function render() {
       if(url.protocol==='https:'||url.protocol==='http:') window.open(url.href,'_blank','noopener,noreferrer');
     };
     return [link,post.platform,time(post.published_at,localWithSeconds),
-      ...Object.keys(labels).map(key=>format(post[key])),...(showSaves ? [format(post.saves)] : []),
+      ...keys.map(key=>format(post[key])),
       post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
-  }),showSaves ? 9 : 8,'暂无符合筛选条件的帖子');
+  }),5+keys.length,'暂无符合筛选条件的帖子');
   draw();
 }
 async function load() {
