@@ -12,6 +12,7 @@
 .interaction-charts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:12px}.interaction-chart{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}.interaction-chart h3{font-size:1rem;margin:0 0 6px;overflow-wrap:anywhere}.interaction-chart .chart{height:auto;min-height:145px;margin-top:8px}
 .comparison-series{display:flex;flex-direction:column;gap:6px;padding:0;margin:6px 0;list-style:none}.comparison-series li{border-left:4px solid;padding-left:7px;overflow-wrap:anywhere}
 .publication-time{color:#6b7280}
+.trend-mode{display:inline-flex;margin-top:12px}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -20,6 +21,7 @@
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
+<div id="trend-mode" class="switch trend-mode" aria-label="互动趋势展示方式"></div>
 <form id="trend-filters" class="trend-filters" aria-label="互动趋势筛选">
 <details id="post-picker" class="post-picker"><summary id="post-selection">帖子名称 · 全部</summary><div id="post-options" class="post-picker-options"></div></details>
 <details id="date-range" class="date-range">
@@ -48,6 +50,8 @@ const format = number => number == null ? '暂无数据' : fmt.format(number);
 const time = (value,formatter=local) => value ? formatter.format(value) : '暂无记录';
 const initialPlatform = new URLSearchParams(location.search).get('platform') || '';
 let platform = Object.hasOwn(platforms, initialPlatform) ? initialPlatform : '';
+const trendModes={all:'全部',single:'单个'};
+let trendMode='all';
 let unit = 'day', metric = platform==='Instagram'?'likes':'impressions', data, requestId = 0;
 
 function visibleMetrics() {
@@ -185,6 +189,7 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
 
 function draw() {
   const names=visibleMetrics();
+  switches($('trend-mode'),trendModes,trendMode,key=>{trendMode=key;draw();});
   switches($('legend'),names,metric,key=>{metric=key;draw();});
   const trend=data?.trend||[];
   const series=new Map();
@@ -209,11 +214,10 @@ function draw() {
   const recent=[...series.values()].filter(post=>post.publishedAt!=null)
     .sort((a,b)=>b.publishedAt-a.publishedAt).slice(0,3);
   const recentMax=Math.max(1,...recent.flatMap(post=>post.points.map(point=>point.value)));
-  const charts=[interactionChart('近 3 条数据',recent,trend,metricName,recentMax,true)];
-  for(const post of series.values()){
-    charts.push(interactionChart(post.title,[post],trend,metricName,postMax));
-  }
-  $('plot').replaceChildren(...charts);
+  const charts=trendMode==='all'
+    ? [interactionChart('近 3 条数据',recent,trend,metricName,recentMax,true)]
+    : [...series.values()].map(post=>interactionChart(post.title,[post],trend,metricName,postMax));
+  $('plot').replaceChildren(...(charts.length?charts:[element('p','暂无符合筛选条件的帖子','empty')]));
 }
 function postName(post) {
   const title=post.title?.trim();
