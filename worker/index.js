@@ -102,11 +102,13 @@ async function syncPosts(env, hour) {
   }
   const statements = [env.DB.prepare('UPDATE posts SET active=0 WHERE active=1')];
   for (const post of posts.values()) {
-    statements.push(env.DB.prepare(`INSERT INTO posts VALUES (?,?,?,?,?,1,?)
+    statements.push(env.DB.prepare(`INSERT INTO posts (id,platform,account,url,title,active,first_hour) VALUES (?,?,?,?,?,1,?)
       ON CONFLICT(id) DO UPDATE SET platform=excluded.platform, account=excluded.account,
-      url=excluded.url, title=excluded.title, active=1`)
+      url=excluded.url, title=excluded.title, active=1, parent_id=NULL`)
       .bind(post.id, post.platform, post.account, post.url, post.title, hour));
   }
+  statements.push(env.DB.prepare(`UPDATE posts SET active=1 WHERE parent_id IN
+    (SELECT id FROM posts WHERE active=1 AND parent_id IS NULL)`));
   await env.DB.batch(statements);
   return posts.size;
 }
@@ -206,6 +208,7 @@ async function collectOtherPlatforms(env, state, previous) {
     ['Instagram', 'INSTAGRAM_ACCOUNTS', collectInstagram],
     ['TikTok', 'TIKTOK_ACCOUNTS', collectTikTok],
   ]) {
+    if (env[platform === 'Instagram' ? 'INSTAGRAM_COLLECTION_MODE' : 'TIKTOK_COLLECTION_MODE'] !== 'api') continue;
     const { results: rows } = await env.DB.prepare(`SELECT p.id FROM posts p WHERE p.active=1 AND p.platform=?
       AND NOT EXISTS (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=? AND s.source='api')`)
       .bind(platform, state.hour).all();
@@ -341,7 +344,7 @@ async function dashboard(env, query) {
   const filter = 'p.active=1 AND EXISTS (SELECT 1 FROM settings WHERE key=\'run\' AND json_extract(value,\'$.syncAt\') IS NOT NULL) AND (?=\'\' OR p.platform=?) AND (?=\'\' OR p.account=?)';
   const args = [platform, platform, account, account];
   const [{ results: posts }, { results: options }, run] = await Promise.all([
-    db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
+    db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.saves,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
       ON s.post_id=p.id AND s.hour=(SELECT t.hour FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? ORDER BY t.hour DESC LIMIT 1)
       WHERE ${filter} ORDER BY s.impressions DESC, p.id`).bind(end, ...args).all(),
     db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
@@ -356,18 +359,23 @@ async function dashboard(env, query) {
     const { results } = await db.prepare(`WITH windows(start,end) AS (VALUES ${rows})
       SELECT w.start,w.end,count(p.id) AS expected,${select} FROM windows w
       LEFT JOIN posts p ON p.first_hour<=w.end AND ${filter}
-      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start AND a.source='api'
-      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end AND b.source='api'
+      LEFT JOIN snapshots a ON a.post_id=p.id AND a.hour=w.start
+      LEFT JOIN snapshots b ON b.post_id=p.id AND b.hour=w.end AND b.source=a.source
       GROUP BY w.start,w.end ORDER BY w.start`)
       .bind(...batch.flatMap(period => [period.start, period.end]), ...args).all();
     trend.push(...results);
   }
-  const xMode = env.X_COLLECTION_MODE === 'api' ? 'api' : 'web';
-  const status = run && xMode === 'web' ? { ...run, retryAt: null,
-    collectionIssue: (run.collectionIssue || '').split(' · ').filter(issue => !/^(?:X请求失败|X API |X 指标|待配置 X API|部分 X 帖子)/.test(issue)).join(' · ') || null } : run;
-  return json({ posts, options, run: status, trend, unit, start, end, xMode });
+  const modes = {
+    X: env.X_COLLECTION_MODE === 'api' ? 'api' : 'web',
+    Instagram: env.INSTAGRAM_COLLECTION_MODE === 'api' ? 'api' : 'web',
+    TikTok: env.TIKTOK_COLLECTION_MODE === 'api' ? 'api' : 'web',
+  };
+  const status = run && { ...run, retryAt: modes.X === 'api' ? run.retryAt : null,
+    collectionIssue: (run.collectionIssue || '').split(' · ').filter(issue =>
+      !Object.entries(modes).some(([platform, mode]) => mode === 'web' && issue.includes(platform))
+    ).join(' · ') || null };
+  return json({ posts, options, run: status, trend, unit, start, end, modes });
 }
-
 async function saveWebSnapshot(request, env) {
   if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
     return json({ error: '未授权' }, 403);
@@ -375,15 +383,34 @@ async function saveWebSnapshot(request, env) {
   const entries = await request.json();
   if (!Array.isArray(entries) || !entries.length || entries.length > 50 ||
       entries.some(entry => typeof entry?.id !== 'string' || !entry.id ||
-        metrics.every(metric => count(entry[metric]) == null))) return json({ error: '网页指标格式无效' }, 400);
+        (metrics.every(metric => count(entry[metric]) == null) && !(entry.id.startsWith('tiktok:') && count(entry.saves) != null)))) return json({ error: '网页指标格式无效' }, 400);
   const now = Date.now();
-  const writes = entries.map(entry => env.DB.prepare(`INSERT INTO snapshots
-    (post_id,hour,captured_at,impressions,likes,comments,source)
-    SELECT id,?,?,?,?,?,'web' FROM posts WHERE id=? AND active=1
-    ON CONFLICT(post_id,hour) DO UPDATE SET captured_at=excluded.captured_at,impressions=excluded.impressions,
-      likes=excluded.likes,comments=excluded.comments WHERE snapshots.source='web'`)
-    .bind(hourOf(now), now, ...metrics.map(metric => count(entry[metric])), entry.id));
-  const results = await env.DB.batch(writes);
+  const discovered = [];
+  const writes = [];
+  for (const entry of entries) {
+    if (entry.parentId != null) {
+      const parent = await env.DB.prepare('SELECT id,url,account FROM posts WHERE id=? AND active=1 AND platform=?')
+        .bind(entry.parentId, 'Instagram').first();
+      const url = typeof entry.url === 'string' && URL.canParse(entry.url) ? new URL(entry.url) : null;
+      const owner = parent && new URL(parent.url).pathname.match(/^\/([\w.]+)\/?$/)?.[1];
+      const match = url && url.pathname.match(/^\/([\w.]+)\/(?:p|reel|reels|tv)\/([\w-]+)\/?$/);
+      if (!owner || url?.origin !== 'https://www.instagram.com' || match?.[1].toLowerCase() !== owner.toLowerCase() ||
+          entry.id !== 'instagram:' + match?.[2]) return json({ error: 'Instagram 帖子与主页不匹配' }, 400);
+      discovered.push(env.DB.prepare(`INSERT INTO posts
+        (id,platform,account,url,title,active,first_hour,parent_id) VALUES (?,?,?,?,?,1,?,?)
+        ON CONFLICT(id) DO UPDATE SET active=1, url=excluded.url, account=excluded.account, title=excluded.title
+        WHERE posts.parent_id=excluded.parent_id`).bind(entry.id, 'Instagram', parent.account || owner,
+          url.origin + url.pathname, typeof entry.title === 'string' ? entry.title.trim().slice(0, 160) : '',
+          hourOf(now), parent.id));
+    }
+    writes.push(env.DB.prepare(`INSERT INTO snapshots
+      (post_id,hour,captured_at,impressions,likes,comments,source,saves)
+      SELECT id,?,?,?,?,?,'web',? FROM posts WHERE id=? AND active=1
+      ON CONFLICT(post_id,hour) DO UPDATE SET captured_at=excluded.captured_at,impressions=excluded.impressions,
+        likes=excluded.likes,comments=excluded.comments,saves=coalesce(excluded.saves,snapshots.saves) WHERE snapshots.source='web'`)
+      .bind(hourOf(now), now, ...metrics.map(metric => count(entry[metric])), entry.id.startsWith('tiktok:') ? count(entry.saves) : null, entry.id));
+  }
+  const results = (await env.DB.batch([...discovered, ...writes])).slice(discovered.length);
   return json({ saved: results.reduce((sum, result) => sum + result.meta.changes, 0) });
 }
 async function mcp(request, env) {

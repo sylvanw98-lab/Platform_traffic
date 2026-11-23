@@ -15,6 +15,20 @@
       "version": "6",
       "tag": "0001_snapshot_source",
       "when": 1795395600000
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795416000000,
+      "tag": "0002_profile_posts",
+      "breakpoints": true
+    },
+    {
+      "when": 1795419600000,
+      "idx": 3,
+      "version": "6",
+      "tag": "0003_tiktok_saves",
+      "breakpoints": true
     }
   ]
 }

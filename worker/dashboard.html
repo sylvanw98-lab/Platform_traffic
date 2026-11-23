@@ -18,7 +18,7 @@
 <div id="plot"></div><p class="note" id="coverage"></p>
 <details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段开始</th><th>净变化</th><th>采集覆盖</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
-<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
@@ -68,7 +68,7 @@ function draw() {
   const plot=$('plot');plot.replaceChildren();
   $('trend-details').hidden=!trend.length;
   rows($('period-table'),trend.slice().reverse().map(p=>[time(p.start),format(p[metric]),p[metric+'_coverage']+' / '+p.expected+(p[metric+'_coverage']<p.expected?' · 数据不完整':'')]),3,'暂无时段数据');
-  $('coverage').textContent=trend.length ? '趋势按具备两端接口快照的帖子计算。' : '';
+  $('coverage').textContent=trend.length ? '趋势使用同一来源的两端采集数据。' : '';
   if(!points.length){plot.append(element('p','暂无可计算的趋势数据','empty'));return;}
   const ns='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(ns,'svg');
@@ -100,7 +100,8 @@ function draw() {
 function render() {
   const {posts,run}=data;
   const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
-  if(data.xMode==='web' && data.options.some(item=>item.platform==='X')) status.unshift('X 使用网页采集');
+  const webPlatforms=[...new Set(data.options.map(item=>item.platform))].filter(platform=>data.modes?.[platform]==='web');
+  if(webPlatforms.length)status.unshift(webPlatforms.join('、')+' 使用网页采集');
   if(run?.retryAt)status.push('可重试时间 '+time(run.retryAt));
   $('status').textContent=status.join(' · ')||'最近一轮采集已完成';
   $('last').textContent=run?.syncAt?'最近同步 '+time(run.syncAt):'';
@@ -115,8 +116,8 @@ function render() {
   }));
   rows($('posts'),posts.map(post=>{
     const link=element('a',post.title||post.url);link.href=post.url;link.target='_blank';link.rel='noopener noreferrer';
-    return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
-  }),8,'暂无符合筛选条件的帖子');
+    return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),post.platform === 'TikTok' ? format(post.saves) : '—',post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
+  }),9,'暂无符合筛选条件的帖子');
   draw();
 }
 async function load() {
