@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>社媒发布数据看板</title>
+<style>
+:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:20px 0}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
+</style></head>
+<body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
+<main>
+<div class="intro"><div><h1>发布数据看板</h1><p class="sub">飞书发布记录 · 北京时间</p></div><p class="note" id="last"></p></div>
+<div id="status" class="status" role="status">正在读取数据……</div>
+<form class="filters" id="filters">
+<label>平台<select id="platform"><option value="">全部平台</option></select></label>
+<label>账号<select id="account"><option value="">全部账号</option></select></label>
+<label>开始日期<input type="date" id="from"></label><label>结束日期<input type="date" id="to"></label>
+<button type="submit">应用筛选</button><button type="reset">重置</button></form>
+<div class="cards" id="cards"></div>
+<section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
+<div id="legend" class="legend" aria-label="趋势指标"></div>
+<div id="plot"></div><p class="note" id="coverage"></p>
+<details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段开始</th><th>净变化</th><th>采集覆盖</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
+</section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
+<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>曝光量</th><th>点赞量</th><th>评论数</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+</section></main>
+<script>
+const $ = id => document.getElementById(id);
+const labels = { impressions:'曝光量',likes:'点赞量',comments:'评论数' };
+const periods = {hour:'小时',day:'日',month:'月',year:'年'};
+const fmt = new Intl.NumberFormat('zh-CN');
+const local = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const format = number => number == null ? '暂无数据' : fmt.format(number);
+const time = value => value ? local.format(value) : '暂无记录';
+let unit = 'day', metric = 'impressions', data, requestId = 0;
+function element(name, text, className) {
+  const node=document.createElement(name);
+  if(text!=null) node.textContent=text;
+  if(className) node.className=className;
+  return node;
+}
+function rows(target, values, columns, empty) {
+  target.replaceChildren();
+  if (!values.length) {
+    const cell=target.insertRow().insertCell(); cell.colSpan=columns;cell.className='empty';cell.textContent=empty;
+    return;
+  }
+  for(const cells of values) {
+    const row=target.insertRow();
+    for(const value of cells) {
+      const cell=row.insertCell();
+      if(value instanceof Node) cell.append(value); else cell.textContent=value;
+    }
+  }
+}
+function switches(target, choices, selected, apply) {
+  target.replaceChildren();
+  for(const [key,label] of Object.entries(choices)) {
+    const button=element('button',label);button.type='button';button.setAttribute('aria-pressed',key===selected);
+    button.onclick=()=>apply(key);target.append(button);
+  }
+}
+function options(target, values, label) {
+  const previous=target.value;
+  target.replaceChildren(new Option(label,''),...Array.from(new Set(values.filter(Boolean))).map(value=>new Option(value,value)));
+  if([...target.options].some(option=>option.value===previous)) target.value=previous;
+}
+function draw() {
+  switches($('legend'),labels,metric,key=>{metric=key;draw();});
+  const trend=data?.trend||[];
+  const points=trend.map((period,index)=>({index,period,value:period[metric]})).filter(item=>item.value!=null);
+  const plot=$('plot');plot.replaceChildren();
+  $('trend-details').hidden=!trend.length;
+  rows($('period-table'),trend.slice().reverse().map(p=>[time(p.start),format(p[metric]),p[metric+'_coverage']+' / '+p.expected+(p[metric+'_coverage']<p.expected?' · 数据不完整':'')]),3,'暂无时段数据');
+  $('coverage').textContent=trend.length ? '时段覆盖按具备两端快照的帖子计算。' : '';
+  if(!points.length){plot.append(element('p','暂无可计算的趋势数据','empty'));return;}
+  const ns='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 880 235');svg.setAttribute('class','chart');
+  svg.setAttribute('role','img');svg.setAttribute('aria-label',labels[metric]+'净变化趋势');
+  const max=Math.max(0,...points.map(p=>p.value)),min=Math.min(0,...points.map(p=>p.value));
+  const y=value=>18+(max-value)*164/(max-min||1), x=index=>63+index*795/Math.max(trend.length-1,1);
+  function svgEl(tag,attrs,label) {
+    const item=document.createElementNS(ns,tag);
+    for(const [key,value] of Object.entries(attrs))item.setAttribute(key,value);
+    if(label!=null)item.textContent=label;
+    svg.append(item);return item;
+  }
+  const ticks=min===max?[0]:Array.from({length:5},(_,i)=>min+(max-min)*i/4);
+  for(const val of ticks){svgEl('line',{x1:63,x2:860,y1:y(val),y2:y(val),class:'grid'});svgEl('text',{x:56,y:y(val)+4,'text-anchor':'end'},fmt.format(Math.round(val)));}
+  let prev;
+  for(const point of points){
+    if(prev?.index===point.index-1)svgEl('line',{x1:x(prev.index),x2:x(point.index),y1:y(prev.value),y2:y(point.value),stroke:'#21805e','stroke-width':2});
+    const dot=svgEl('circle',{cx:x(point.index),cy:y(point.value),r:3,fill:point.period[metric+'_coverage']<point.period.expected?'#ae742d':'#17694f'});
+    const hint=document.createElementNS(ns,'title');hint.textContent=time(point.period.start)+' · '+format(point.value)+' · '+point.period[metric+'_coverage']+'/'+point.period.expected;dot.append(hint);prev=point;
+  }
+  const markCount=Math.min(5,trend.length);
+  for(let i=0;i<markCount;i++){
+    const j=Math.round(i*(trend.length-1)/Math.max(markCount-1,1));
+    const label=time(trend[j].start);svgEl('text',{x:x(j),y:211,'text-anchor':i===0?'start':i===markCount-1?'end':'middle'},unit==='hour'?label.slice(5):label.slice(0,10));
+  }
+  plot.append(svg);
+}
+function render() {
+  const {posts,run}=data;
+  const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
+  if(run?.retryAt)status.push('可重试时间 '+time(run.retryAt));
+  $('status').textContent=status.join(' · ')||'最近一轮采集已完成';
+  $('last').textContent=run?.syncAt?'最近同步 '+time(run.syncAt):'';
+  $('post-count').textContent='共 '+posts.length+' 条';
+  options($('platform'),data.options.map(p=>p.platform),'全部平台');
+  options($('account'),data.options.filter(p=>!$('platform').value||p.platform===$('platform').value).map(p=>p.account),'全部账号');
+  $('cards').replaceChildren(...Object.entries(labels).map(([key,label])=>{
+    const values=posts.map(post=>post[key]).filter(value=>value!=null);
+    const card=element('article',null,'card');
+    card.append(element('span',label,'sub'),element('strong',format(values.length?values.reduce((a,b)=>a+b,0):null)),element('p','累计值 · '+values.length+'/'+posts.length+' 条有数据','note'));
+    return card;
+  }));
+  rows($('posts'),posts.map(post=>{
+    const link=element('a',post.title||post.url);link.href=post.url;link.target='_blank';link.rel='noopener noreferrer';
+    return [link,post.platform,post.account||'—',...Object.keys(labels).map(key=>format(post[key])),time(post.captured_at)];
+  }),7,'暂无符合筛选条件的帖子');
+  draw();
+}
+async function load() {
+  const id=++requestId;
+  switches($('periods'),periods,unit,key=>{unit=key;load();});
+  $('status').textContent='正在读取数据……';
+  try {
+    const query=new URLSearchParams({unit});
+    for(const key of ['platform','account','from','to']) if($(key).value) query.set(key,$(key).value);
+    if($('from').value&&$('to').value&&$('from').value>$('to').value)throw new Error('开始日期须早于或等于结束日期');
+    const response=await fetch('/api/dashboard?'+query);const result=await response.json();
+    if(id!==requestId)return;
+    if(!response.ok)throw new Error(result.error||'读取失败');
+    data=result;render();
+  } catch(error) {if(id===requestId)$('status').textContent=error.message;}
+}
+$('filters').onsubmit=event=>{event.preventDefault();load();};
+$('filters').onreset=()=>setTimeout(load,0);
+$('platform').onchange=()=>{options($('account'),(data?.options||[]).filter(p=>!$('platform').value||p.platform===$('platform').value).map(p=>p.account),'全部账号');};
+draw();load();
+</script></body></html>
