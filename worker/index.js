@@ -1,5 +1,4 @@
 const html = '__DASHBOARD__';
-const platformHtml = '__PLATFORM_DASHBOARD__';
 const hourMs = 3600000;
 const offset = 8 * hourMs;
 const metrics = ['impressions', 'likes', 'comments'];
@@ -483,8 +482,7 @@ export default {
     const url = new URL(request.url);
     try {
       if (request.method === 'GET' && url.pathname === '/') {
-        const selected = url.searchParams.get('platform');
-        return new Response(Object.hasOwn(accountFeeds, selected) ? platformHtml : html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
+        return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env, url.searchParams);
       if (request.method === 'GET' && url.pathname === '/api/collection-log') return await collectionLog(env.DB, url.searchParams);

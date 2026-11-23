@@ -11,7 +11,7 @@
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
-<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><p class="note" id="last"></p></div>
+<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><div class="intro-actions"><p class="note" id="last"></p><button type="button" id="refresh">刷新</button></div></div>
 <div id="status" class="status" role="status">正在读取数据……</div>
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
 <section class="panel" id="profiles"><h2>账号概况</h2><div class="profile-list" id="profile-list"></div></section>
@@ -36,7 +36,7 @@
 <div class="table-wrap" id="collection-log-table"></div>
 </section></main>
 <script>
-const $ = id => document.getElementById(id);
+const $ = id => view.querySelector('#'+id);
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
 const trendMetrics = {percent:'粉丝涨幅',followers:'粉丝数量'};
@@ -46,8 +46,6 @@ const pct = new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2,style:'percen
 const clock = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const format = value => value == null ? '暂无数据' : typeof value==='string'?value:fmt.format(value);
 const date = value => clock.format(value);
-const initial = new URLSearchParams(location.search).get('platform') || '';
-let platform = Object.hasOwn(platforms,initial) ? initial : '';
 let unit='day', trendMetric='percent', requestId=0, data;
 let chartWidth=0;
 
@@ -64,13 +62,6 @@ function switches(target,choices,selected,apply) {
     button.type='button';button.setAttribute('aria-pressed',key===selected);
     button.onclick=()=>apply(key);target.append(button);
   }
-}
-function choosePlatform(next) {
-  if(next===platform)return;
-  const url=new URL(location.href);
-  if(next)url.searchParams.set('platform',next);
-  else url.searchParams.delete('platform');
-  location.assign(url);
 }
 function renderProfiles(profiles,posts) {
   const list=$('profile-list');
@@ -237,12 +228,11 @@ function draw() {
 }
 async function load() {
   const id=++requestId;
-  switches($('platform-tabs'),platforms,platform,choosePlatform);
+  switches($('platform-tabs'),platforms,'',choosePlatform);
   switches($('periods'),periods,unit,key=>{unit=key;load();});
   $('status').textContent='正在读取账号数据……';
   try {
     const query=new URLSearchParams({unit});
-    if(platform)query.set('platform',platform);
     const response=await fetch('/api/dashboard?'+query);
     const result=await response.json();
     if(id!==requestId)return;
@@ -271,6 +261,7 @@ for(let hour=0;hour<24;hour++){
 $('log-end').value='24';
 $('log-filters').onchange=loadCollectionLog;
 $('log-filters').onsubmit=event=>{event.preventDefault();loadCollectionLog();};
+$('refresh').onclick=()=>{load();loadCollectionLog();};
 loadCollectionLog();
 load();
 </script></body></html>

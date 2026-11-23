@@ -16,7 +16,7 @@
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
-<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><p class="note" id="last"></p></div>
+<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><div class="intro-actions"><p class="note" id="last"></p><button type="button" id="refresh">刷新</button></div></div>
 <div id="status" class="status" role="status">正在读取数据……</div>
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
 <div class="cards" id="cards"></div>
@@ -37,7 +37,7 @@
 <div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th id="post-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
 <script>
-const $ = id => document.getElementById(id);
+const $ = id => view.querySelector('#'+id);
 const selectedPosts=new Set();
 const labels = { impressions:'浏览量 / 曝光量',likes:'点赞量',comments:'评论数' };
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
@@ -48,8 +48,6 @@ const local = new Intl.DateTimeFormat('zh-CN',dateTimeOptions);
 const localWithSeconds = new Intl.DateTimeFormat('zh-CN',{...dateTimeOptions,second:'2-digit'});
 const format = number => number == null ? '暂无数据' : fmt.format(number);
 const time = (value,formatter=local) => value ? formatter.format(value) : '暂无记录';
-const initialPlatform = new URLSearchParams(location.search).get('platform') || '';
-let platform = Object.hasOwn(platforms, initialPlatform) ? initialPlatform : '';
 const trendModes={all:'全部',single:'单个'};
 let trendMode='all';
 let unit = 'day', metric = platform==='Instagram'?'likes':'impressions', data, requestId = 0;
@@ -62,13 +60,6 @@ function visibleMetrics() {
   return names;
 }
 
-function choosePlatform(next) {
-  if(next===platform)return;
-  const url=new URL(location.href);
-  if(next)url.searchParams.set('platform',next);
-  else url.searchParams.delete('platform');
-  location.assign(url);
-}
 function element(name, text, className) {
   const node=document.createElement(name);
   if(text!=null) node.textContent=text;
@@ -336,7 +327,7 @@ $('trend-filters').onsubmit=event=>{
 for(const id of ['published-from','published-to']) $(id).oninput=updateDateSelection;
 $('post-picker').ontoggle=()=>{if($('post-picker').open)$('date-range').open=false;};
 $('date-range').ontoggle=()=>{if($('date-range').open)$('post-picker').open=false;};
-document.addEventListener('click',event=>{
+view.addEventListener('click',event=>{
   for(const id of ['post-picker','date-range']){
     const panel=$(id);
     if(panel.open&&!panel.contains(event.target))panel.open=false;
@@ -348,5 +339,7 @@ $('trend-filters').onreset=()=>{
   $('date-range').open=false;
   setTimeout(()=>{updateDateSelection();load();},0);
 };
+$('refresh').onclick=load;
 draw();load();
+return draw;
 </script></body></html>
