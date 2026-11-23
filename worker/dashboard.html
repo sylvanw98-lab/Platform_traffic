@@ -18,11 +18,11 @@
 <div id="plot"></div><p class="note" id="coverage"></p>
 <details id="trend-details"><summary>查看时段数据</summary><div class="table-wrap"><table><thead><tr><th>时段开始</th><th>净变化</th><th>采集覆盖</th></tr></thead><tbody id="period-table"></tbody></table></div></details>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
-<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>曝光量</th><th>点赞量</th><th>评论数</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>账号</th><th>浏览量</th><th>点赞量</th><th>评论数</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
 </section></main>
 <script>
 const $ = id => document.getElementById(id);
-const labels = { impressions:'曝光量',likes:'点赞量',comments:'评论数' };
+const labels = { impressions:'浏览量',likes:'点赞量',comments:'评论数' };
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
 const fmt = new Intl.NumberFormat('zh-CN');
 const local = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});

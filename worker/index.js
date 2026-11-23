@@ -92,57 +92,67 @@ async function putSetting(db, key, value) {
 function count(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
-async function collect(env) {
-  const now = Date.now();
-  const hour = hourOf(now);
+async function browserQueue(env) {
   const db = env.DB;
+  const hour = hourOf(Date.now());
   const previous = await getSetting(db, 'run') || {};
-  if (previous.hour === hour && previous.syncIssue === null && previous.collectionIssue === null) return previous;
-  let syncIssue = null;
   let syncAt = previous.syncAt || null;
-  try {
-    await syncPosts(env, hour);
-    syncAt = Date.now();
-  } catch (error) {
-    syncIssue = safeIssue(error, '飞书同步失败');
-  }
-
-  const state = { hour, attemptedAt: now, syncAt, syncIssue, collectionIssue: null, retryAt: null };
-  const { results: posts } = await db.prepare(`SELECT p.id FROM posts p
-    WHERE p.active=1 AND p.platform='X' AND NOT EXISTS
-    (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=?) ORDER BY p.id`).bind(hour).all();
-  if (!env.X_BEARER_TOKEN) {
-    state.collectionIssue = '待配置 X API 凭据';
-  } else if (previous.retryAt > now) {
-    state.collectionIssue = previous.collectionIssue;
-    state.retryAt = previous.retryAt;
+  let syncIssue = null;
+  if (previous.hour === hour && previous.syncAt && !previous.syncIssue) {
+    syncAt = previous.syncAt;
   } else {
-    for (let i = 0; i < posts.length; i += 100) {
-      const ids = posts.slice(i, i + 100).map(post => post.id.slice(2));
-      try {
-        const result = await readJson('https://api.x.com/2/tweets?ids=' + ids.join(',') + '&tweet.fields=public_metrics,created_at', {
-          headers: { Authorization: 'Bearer ' + env.X_BEARER_TOKEN },
-        }, 'X');
-        const requested = new Set(ids);
-        const writes = (result.data || []).filter(post => requested.has(post.id)).map(post => {
-          const m = post.public_metrics || {};
-          return db.prepare('INSERT OR IGNORE INTO snapshots VALUES (?,?,?,?,?,?)')
-            .bind('x:' + post.id, hour, Date.now(), count(m.impression_count), count(m.like_count), count(m.reply_count));
-        });
-        if (writes.length) await db.batch(writes);
-        if (writes.length < ids.length) state.collectionIssue = '部分 X 帖子暂时无法读取';
-      } catch (error) {
-        state.collectionIssue = safeIssue(error, 'X 指标采集失败');
-        if (error.retryAt) state.retryAt = error.retryAt;
-        break;
-      }
+    try {
+      await syncPosts(env, hour);
+      syncAt = Date.now();
+    } catch (error) {
+      syncIssue = safeIssue(error, '飞书同步失败');
     }
   }
-  state.collected = await db.prepare('SELECT count(*) AS n FROM snapshots WHERE hour=?').bind(hour).first('n');
-  await putSetting(db, 'run', state);
-  return state;
+  if (!syncAt) {
+    await db.prepare('INSERT OR IGNORE INTO posts VALUES (?,?,?,?,?,1,?)')
+      .bind('x:2123233635017076746', 'X', 'shotpoet', 'https://x.com/shotpoet/status/2123233635017076746',
+        'AI image generation is getting a little too fun.', hour).run();
+    syncIssue += '，当前使用本地表格样本';
+  }
+  const { results: posts } = await db.prepare(`SELECT p.id,p.url FROM posts p
+    WHERE p.active=1 AND p.platform='X' AND NOT EXISTS
+    (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=?) ORDER BY p.id`).bind(hour).all();
+  await putSetting(db, 'run', { ...previous, hour, attemptedAt: Date.now(), syncAt, syncIssue, retryAt: null,
+    collectionIssue: posts.length ? '等待浏览器采集' : null });
+  return { hour, posts };
 }
 
+async function saveBrowserMetrics(request, env) {
+  const body = await request.json();
+  if (!Array.isArray(body.results) || body.results.length > 100 ||
+      !Number.isSafeInteger(body.hour) || body.hour < hourOf(Date.now()) - hourMs ||
+      body.hour > hourOf(Date.now())) return json({ error: '采集批次无效' }, 400);
+  const db = env.DB;
+  let incomplete = 0;
+  const writes = [];
+  for (const result of body.results) {
+    if (typeof result?.id !== 'string' || !/^x:\d+$/.test(result.id)) return json({ error: '帖子 ID 无效' }, 400);
+    const values = metrics.map(metric => count(result[metric]));
+    if (values.some(value => value == null)) incomplete++;
+    if (values.every(value => value == null)) continue;
+    writes.push(db.prepare(`INSERT INTO snapshots SELECT id,?,?,?,?,? FROM posts WHERE id=? AND active=1
+      ON CONFLICT(post_id,hour) DO UPDATE SET
+        impressions=coalesce(snapshots.impressions,excluded.impressions),
+        likes=coalesce(snapshots.likes,excluded.likes),
+        comments=coalesce(snapshots.comments,excluded.comments)`)
+      .bind(body.hour, Date.now(), ...values, result.id));
+  }
+  if (writes.length) await db.batch(writes);
+  const previous = await getSetting(db, 'run') || {};
+  const collected = await db.prepare('SELECT count(*) AS n FROM snapshots WHERE hour=?').bind(body.hour).first('n');
+  const remaining = await db.prepare(`SELECT count(*) AS n FROM posts p WHERE p.active=1 AND p.platform='X'
+    AND NOT EXISTS (SELECT 1 FROM snapshots s WHERE s.post_id=p.id AND s.hour=?)`).bind(body.hour).first('n');
+  const partial = await db.prepare(`SELECT count(*) AS n FROM snapshots WHERE hour=?
+    AND (impressions IS NULL OR likes IS NULL OR comments IS NULL)`).bind(body.hour).first('n');
+  const collectionIssue = incomplete || partial || remaining ? '部分网页指标暂不可读或等待采集' : null;
+  if (previous.hour === body.hour) await putSetting(db, 'run', { ...previous, collected, collectionIssue });
+  return json({ collected, incomplete, remaining });
+}
 function safeIssue(error, fallback) {
   return /^(?:飞书请求失败|X请求失败|待配置|未找到|无法读取工作表|飞书返回)/.test(error.message)
     ? error.message : fallback;
@@ -214,26 +224,6 @@ async function dashboard(db, query) {
   return json({ posts, options, run, trend, unit, start, end });
 }
 
-async function mcp(request, env) {
-  const rpc = await request.json();
-  const reply = (result) => json({ jsonrpc: '2.0', id: rpc.id, result });
-  if (rpc.method === 'server/discover') {
-    return reply({ supportedVersions: ['2026-07-28'], capabilities: { tools: {} } });
-  }
-  if (rpc.method === 'tools/list') {
-    return reply({ tools: [{ name: 'collect_metrics', description: '同步飞书发布链接并采集本小时指标', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }] });
-  }
-  if (rpc.method === 'tools/call' && rpc.params?.name === 'collect_metrics') {
-    const email = request.headers.get('oai-authenticated-user-email')?.toLowerCase();
-    if (!env.COLLECT_OWNER_EMAIL || email !== env.COLLECT_OWNER_EMAIL.toLowerCase()) {
-      return reply({ isError: true, content: [{ type: 'text', text: '采集工具尚未授权给当前账号' }] });
-    }
-    const run = await collect(env);
-    return reply({ isError: Boolean(run.collectionIssue || run.syncIssue), content: [{ type: 'text', text: JSON.stringify(run) }] });
-  }
-  return json({ jsonrpc: '2.0', id: rpc.id ?? null, error: { code: -32601, message: 'Method not found' } });
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -242,18 +232,15 @@ export default {
         return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') return await dashboard(env.DB, url.searchParams);
-      if (request.method === 'POST' && url.pathname === '/mcp') return await mcp(request, env);
-      if (request.method === 'POST' && url.pathname === '/api/collect') {
-        if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) return json({ error: '未授权' }, 403);
-        const result = await collect(env);
-        return json(result, result.retryAt ? 429 : result.syncIssue || result.collectionIssue ? 503 : 200);
+      if (request.method === 'POST' && ['/api/browser/queue', '/api/browser/metrics'].includes(url.pathname)) {
+        if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
+          return json({ error: '未授权' }, 403);
+        }
+        return url.pathname.endsWith('/queue') ? json(await browserQueue(env)) : await saveBrowserMetrics(request, env);
       }
       return json({ error: '页面不存在' }, 404);
     } catch {
       return json({ error: '服务暂时不可用' }, 503);
     }
-  },
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(collect(env));
   },
 };
