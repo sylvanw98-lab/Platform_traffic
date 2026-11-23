@@ -34,6 +34,7 @@ const date = value => clock.format(value);
 const initial = new URLSearchParams(location.search).get('platform') || '';
 let platform = Object.hasOwn(platforms,initial) ? initial : '';
 let unit='day', requestId=0, data;
+let chartWidth=0;
 
 function element(tag,text,className) {
   const node=document.createElement(tag);
@@ -90,6 +91,12 @@ function axisLabel(value) {
   if(unit==='day')return date(value).slice(5,10);
   return periodLabel(value);
 }
+function tickIndices(length,width) {
+  if(length<2)return length?[0]:[];
+  const gap=unit==='month'?80:65;
+  const count=Math.min(length,12,Math.max(2,Math.floor(width/gap)+1));
+  return Array.from({length:count},(_,i)=>Math.round(i*(length-1)/(count-1)));
+}
 function drawChart(name,trend,points,high,low) {
   const card=element('article',null,'follower-chart');
   card.append(element('h3',name));
@@ -127,10 +134,10 @@ function drawChart(name,trend,points,high,low) {
     const percent=point.percent==null?'—':pct.format(point.percent/100);
     node('title',{},periodLabel(point.start)+' · @'+point.handle+' · '+fmt.format(point.growth)+' 位 · 涨幅 '+percent,bar);
   }
-  const marks=Math.min(unit==='hour'?2:3,trend.length);
-  for(let i=0;i<marks;i++){
-    const index=Math.round(i*(trend.length-1)/Math.max(marks-1,1));
-    node('text',{x:x(index),y:144,'text-anchor':i===0?'start':i===marks-1?'end':'middle'},axisLabel(trend[index].start));
+  for(const index of tickIndices(trend.length,plotWidth)){
+    const anchor=index===0?'start':index===trend.length-1?'end':'middle';
+    node('line',{x1:x(index),x2:x(index),y1:124,y2:128,class:'grid'});
+    node('text',{x:x(index),y:144,'text-anchor':anchor},axisLabel(trend[index].start));
   }
   card.append(svg);
   return card;
@@ -170,6 +177,14 @@ async function load() {
     $('status').textContent=web.length?web.join('、')+' 使用网页采集':'等待账号采集';
     draw();
   }catch(error){if(id===requestId)$('status').textContent=error.message;}
+}
+if(typeof ResizeObserver==='function'){
+  new ResizeObserver(([entry])=>{
+    const width=Math.round(entry.contentRect.width);
+    if(width===chartWidth)return;
+    chartWidth=width;
+    if(data)draw();
+  }).observe($('follower-charts'));
 }
 load();
 </script></body></html>
