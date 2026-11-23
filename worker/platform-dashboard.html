@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>社媒发布数据看板</title>
 <style>
-:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:20px 0}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
+:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#172b27;background:#f4f6f2;--line:#e0e7df;--muted:#51665f;--green:#17694f}*{box-sizing:border-box}body{margin:0}header{background:#12332a;color:white;padding:24px max(24px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:12px;font-weight:700}.logo{width:23px;height:23px;display:inline-flex;align-items:end;gap:3px}.logo i{width:5px;background:#a8edc7;border-radius:2px}.logo i:nth-child(1){height:8px}.logo i:nth-child(2){height:14px}.logo i:nth-child(3){height:22px}main{max-width:1248px;margin:auto;padding:36px 24px 60px}.intro{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;margin:0 0 9px}h2{font-size:1.25rem;margin:0}.sub,.note{color:var(--muted);margin:0;font-size:.9rem}.status{margin:18px 0;background:#e7efe8;color:#254a3c;padding:12px 16px;border-radius:8px;font-size:.9rem}label{display:grid;gap:6px;font-size:.875rem;color:var(--muted)}select,input,button{font:inherit;border:1px solid #cbd8ce;border-radius:8px;background:white;color:#18342b;padding:9px 11px;min-height:40px}button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--green)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card,.panel{background:#fff;border:1px solid var(--line);border-radius:13px}.card{padding:18px 20px}.card strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1.3rem,4vw,2.4rem);letter-spacing:-.04em;margin:8px 0;overflow-wrap:anywhere}.panel{padding:20px;margin-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.switch{display:flex;gap:4px;background:#edf2ed;padding:4px;border-radius:9px}.switch button{border:0;background:transparent;min-height:34px;padding:5px 13px}.switch button[aria-pressed=true]{background:#17694f;color:white}.chart{height:235px;width:100%;display:block;margin-top:12px}.chart text{fill:#51665f;font:12px system-ui}.chart .grid{stroke:#e1e9e2;stroke-width:1}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.legend button[aria-pressed=true]{background:#e6f4eb;border-color:#589977}.table-wrap{overflow:auto;margin-top:10px}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:.9rem}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}a{color:var(--green);text-underline-offset:3px}td:first-child{min-width:180px;max-width:360px;white-space:normal}.empty{padding:30px 10px;color:var(--muted);text-align:center}.num{font-variant-numeric:tabular-nums}details{margin-top:14px}summary{cursor:pointer;color:var(--green);font-size:.9rem}@media(max-width:600px){main{padding:23px 13px 35px}.card,.panel{padding:12px}.cards{gap:6px}.card .note{font-size:.75rem}.switch button{padding:5px 9px}}
 .platform-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0 0;border-bottom:1px solid var(--line);padding-bottom:8px}.platform-tabs button{background:transparent;border-color:transparent;font-weight:600;padding:8px 16px}.platform-tabs button[aria-pressed=true]{color:white;background:var(--green)}.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.cards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .post-link{border:0;padding:0;min-height:0;background:transparent;color:var(--green);text-align:left;text-decoration:underline;text-underline-offset:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 
@@ -11,17 +11,13 @@
 
 .interaction-charts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:12px}.interaction-chart{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}.interaction-chart h3{font-size:1rem;margin:0 0 6px;overflow-wrap:anywhere}.interaction-chart .chart{height:auto;min-height:145px;margin-top:8px}
 .comparison-series{display:flex;flex-direction:column;gap:6px;padding:0;margin:6px 0;list-style:none}.comparison-series li{border-left:4px solid;padding-left:7px;overflow-wrap:anywhere}
+.publication-time{color:#6b7280}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
 <div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><p class="note" id="last"></p></div>
 <div id="status" class="status" role="status">正在读取数据……</div>
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
-<form class="filters" id="filters">
-
-<label>账号<select id="account"><option value="">全部账号</option></select></label>
-<label>开始日期<input type="date" id="from"></label><label>结束日期<input type="date" id="to"></label>
-<button type="submit">应用筛选</button><button type="reset">重置</button></form>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
 <form id="trend-filters" class="trend-filters" aria-label="互动趋势筛选">
@@ -97,11 +93,6 @@ function switches(target, choices, selected, apply) {
     button.onclick=()=>apply(key);target.append(button);
   }
 }
-function options(target, values, label) {
-  const previous=target.value;
-  target.replaceChildren(new Option(label,''),...Array.from(new Set(values.filter(Boolean))).map(value=>new Option(value,value)));
-  if([...target.options].some(option=>option.value===previous)) target.value=previous;
-}
 const seriesColors=['#17694f','#a44075','#365dab','#9b5425','#6854a9','#167282','#9b353d','#536623'];
 function trendPeriod(value) {
   const label=time(value);
@@ -115,6 +106,10 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
   const heading=element('h3',title);
   heading.title=title;
   card.append(heading);
+  if(!compare){
+    const publishedAt=series[0].publishedAt;
+    card.append(element('p','发布时间：'+time(publishedAt,localWithSeconds),'note publication-time'));
+  }
   if(compare && series.length){
     const legend=element('ul',null,'comparison-series note');
     for(const post of series){
@@ -285,7 +280,6 @@ function render() {
   $('status').textContent=status.join(' · ')||'最近一轮采集已完成';
   $('last').textContent=data.accountFeedAt?'最近采集 '+time(data.accountFeedAt):'';
   $('post-count').textContent='共 '+posts.length+' 条';
-  options($('account'),data.options.filter(p=>!platform||p.platform===platform).map(p=>p.account),'全部账号');
   const metrics=visibleMetrics();
   const keys=Object.keys(metrics);
   $('cards').classList.toggle('two',keys.length===2);
@@ -325,19 +319,12 @@ async function load() {
     for(const post of selectedPosts)query.append('post',post);
     if(publishedFrom)query.set('publishedFrom',publishedFrom);
     if(publishedTo)query.set('publishedTo',publishedTo);
-    for(const key of ['account','from','to']) if($(key).value) query.set(key,$(key).value);
-    if($('from').value&&$('to').value&&$('from').value>$('to').value)throw new Error('开始日期须早于或等于结束日期');
     const response=await fetch('/api/dashboard?'+query);const result=await response.json();
     if(id!==requestId)return;
     if(!response.ok)throw new Error(result.error||'读取失败');
     data=result;render();
   } catch(error) {if(id===requestId)$('status').textContent=error.message;}
 }
-$('filters').onsubmit=event=>{event.preventDefault();load();};
-$('filters').onreset=()=>{
-  selectedPosts.clear();
-  setTimeout(load,0);
-};
 $('trend-filters').onsubmit=event=>{
   event.preventDefault();
   try { publishRange(); }
@@ -366,6 +353,5 @@ $('trend-filters').onreset=()=>{
   $('date-range').open=false;
   setTimeout(()=>{updateDateSelection();load();},0);
 };
-$('account').onchange=()=>{selectedPosts.clear();updatePostSelection();};
 draw();load();
 </script></body></html>
