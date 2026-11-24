@@ -16,12 +16,17 @@
 .metric-series:not(.post-comparison){flex-direction:row;flex-wrap:wrap;gap:6px 16px}.metric-series li{display:inline-flex;align-items:center;gap:6px;border-left:0;padding-left:0}.metric-series i{width:9px;height:9px;border-radius:50%;flex:none}
 .post-thumbnail{width:48px;height:48px;flex:none;object-fit:cover;border-radius:5px}
 .post-chart-heading{display:flex;align-items:center;gap:10px}.post-chart-heading>div{min-width:0}
+.media-tabs{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}.media-tabs p{margin:0}
+.thumbnail-button{display:inline-flex;align-items:center;justify-content:center;flex:none;padding:0;min-height:0;border:0;background:transparent;border-radius:5px;cursor:zoom-in}.thumbnail-button:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.post-original{font-size:.9rem;font-weight:400;overflow-wrap:anywhere;word-break:break-word}.post-chart-heading h3{margin-bottom:6px}.post-detail{display:flex;align-items:center;gap:10px;min-width:230px}
+.image-preview{width:min(1000px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:16px;border:1px solid var(--line);border-radius:13px;background:#fff;color:#172b27}.image-preview::backdrop{background:#10251ed9}.preview-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.preview-header h2{font-size:1.1rem}.preview-image{display:block;width:100%;height:auto;max-height:calc(100dvh - 190px);object-fit:contain;background:#f4f6f2;border-radius:6px}.preview-image[hidden]{display:none}.preview-link{display:block;margin-top:12px}.preview-error{padding:40px 16px;text-align:center;color:var(--muted)}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
-<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><div class="intro-actions"><p class="note" id="last"></p><button type="button" id="refresh">刷新</button></div></div>
+<div class="intro"><div><h1>发布数据看板</h1><p class="sub">平台账号 · 北京时间</p></div><div class="intro-actions"><p class="note" id="last"></p><button type="button" data-open-collection>自动采集设置</button><button type="button" id="refresh">刷新</button></div></div>
 <div id="status" class="status" role="status">正在读取数据……</div>
 <nav id="platform-tabs" class="platform-tabs" aria-label="按平台查看"></nav>
+<div class="media-tabs"><div id="media-tabs" class="switch" role="group" aria-label="内容类型"></div><p id="media-note" class="note"></p></div>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="panel-head"><h2>互动趋势</h2><div class="switch" id="periods" aria-label="时间粒度"></div></div>
 <div id="trend-mode" class="switch trend-mode" aria-label="互动趋势展示方式"></div>
@@ -38,13 +43,17 @@
 <div id="plot" class="interaction-charts" aria-label="总体和单帖互动趋势"></div>
 </section><section class="panel"><div class="panel-head"><h2>帖子明细</h2><p class="note" id="post-count"></p></div>
 <div class="table-wrap"><table><thead><tr><th>帖子</th><th>平台</th><th>发布时间</th><th id="post-views-column">浏览量 / 曝光量</th><th>点赞量</th><th>评论数</th><th id="post-saves-column" hidden>TikTok 收藏数</th><th>数据来源</th><th>最近采集</th></tr></thead><tbody id="posts"></tbody></table></div>
-</section></main>
+</section>
+<dialog id="image-preview" class="image-preview" aria-labelledby="preview-title"><div class="preview-header"><h2 id="preview-title">图片预览</h2><button id="preview-close" type="button" autofocus>关闭</button></div><img id="preview-image" class="preview-image" alt="帖子图片预览" referrerpolicy="no-referrer"><p id="preview-error" class="preview-error" hidden>图片暂时无法加载，请打开原帖查看。</p><a id="preview-link" class="preview-link post-original" target="_blank" rel="noopener noreferrer">打开原帖</a></dialog>
+</main>
 <script>
 const $ = id => view.querySelector('#'+id);
 const selectedPosts=new Set();
 let useRecentPosts=true;
 const labels = { impressions:'浏览量 / 曝光量',likes:'点赞量',comments:'评论数' };
 const platforms = {'':'全部',X:'X',Instagram:'Instagram',TikTok:'TikTok'};
+const mediaTypes = {'':'全部',image:'图片',video:'视频'};
+let mediaType='';
 const periods = {hour:'小时',day:'日',month:'月',year:'年'};
 const fmt = new Intl.NumberFormat('zh-CN');
 const dateTimeOptions = {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'};
@@ -101,15 +110,40 @@ function trendPeriod(value) {
   if(unit==='month')return label.slice(0,7);
   return label.slice(0,4);
 }
-function appendPostThumbnail(target,url) {
+function originalLink(url) {
+  const link=element('a',url,'post-original');
+  const parsed=new URL(url);
+  if(parsed.protocol==='https:'||parsed.protocol==='http:')link.href=parsed.href;
+  link.target='_blank';
+  link.rel='noopener noreferrer';
+  return link;
+}
+function previewImage(url,postUrl) {
+  const dialog=$('image-preview'),image=$('preview-image');
+  $('preview-error').hidden=true;
+  image.hidden=false;
+  image.onerror=()=>{image.hidden=true;$('preview-error').hidden=false;};
+  image.src=url;
+  const link=originalLink(postUrl);
+  $('preview-link').href=link.href;
+  $('preview-link').textContent=postUrl;
+  dialog.showModal();
+}
+function appendPostThumbnail(target,url,postUrl) {
   if(!url)return;
+  const button=element('button',null,'thumbnail-button');
+  button.type='button';
+  button.setAttribute('aria-label','放大预览图片');
+  button.title='放大预览图片';
   const image=element('img',null,'post-thumbnail');
   image.alt='';
   image.loading='lazy';
   image.referrerPolicy='no-referrer';
-  image.onerror=()=>image.remove();
+  image.onerror=()=>button.remove();
   image.src=url;
-  target.append(image);
+  button.onclick=()=>previewImage(url,postUrl);
+  button.append(image);
+  target.append(button);
 }
 function interactionChart(title,series,trend,metricName,max,compare=false) {
   const card=element('article',null,'interaction-chart');
@@ -118,11 +152,12 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
   if(compare){
     card.append(heading);
   }else{
-    const {publishedAt,thumbnailUrl}=series[0];
+    const {publishedAt,thumbnailUrl,url}=series[0];
+    heading.replaceChildren(originalLink(url));
     const header=element('div',null,'post-chart-heading');
     const text=element('div');
     text.append(heading,element('p','发布时间：'+time(publishedAt,localWithSeconds),'note publication-time'));
-    appendPostThumbnail(header,thumbnailUrl);
+    appendPostThumbnail(header,thumbnailUrl,url);
     header.append(text);
     card.append(header);
   }
@@ -135,8 +170,8 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
       dot.style.backgroundColor=post.color;
       dot.setAttribute('aria-hidden','true');
       item.append(dot);
-      if(compare)appendPostThumbnail(item,post.thumbnailUrl);
-      item.append(element('span',post.title));
+      if(compare)appendPostThumbnail(item,post.thumbnailUrl,post.url);
+      item.append(compare?originalLink(post.url):element('span',post.title));
       legend.append(item);
     }
     card.append(legend);
@@ -238,7 +273,7 @@ function draw() {
     if(!selected.has(post.id))continue;
     const title=postName(post),publishedAt=post.published_at;
     series.set(post.id,{title,lines:new Map(activeMetrics.map(key=>[key,{
-      title:trendMode==='all'?title:names[key],publishedAt,metricName:names[key],thumbnailUrl:post.thumbnail_url,
+      title:trendMode==='all'?title:names[key],url:post.url,publishedAt,metricName:names[key],thumbnailUrl:post.thumbnail_url,
       color:trendMode==='all'?seriesColors[series.size%seriesColors.length]:metricColors[key],points:[],
     }]))});
   }
@@ -256,6 +291,10 @@ function draw() {
   }
   const metricName=names[metric];
   const matched=[...series.values()];
+  if(!data?.posts?.length){
+    $('plot').replaceChildren(element('p',mediaType==='video'?'暂无视频帖子，发布并采集后将在这里显示视频流量':mediaType==='image'?'暂无图片帖子':'暂无符合筛选条件的帖子','empty'));
+    return;
+  }
   const title=data?.trendRecentOnly&&matched.length?'近 '+matched.length+' 条数据':'帖子对比';
   const charts=trendMode==='all'
     ? [interactionChart(title,matched.map(post=>post.lines.get(metric)),trend,metricName,postMax,true)]
@@ -313,13 +352,15 @@ function render() {
   const {posts,run}=data;
   renderPostOptions(posts);
   $('trend-filter-status').textContent='趋势包含 '+data.trendPostCount+' 条帖子';
-  const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):['等待首次采集'];
+  const status=run?[run.syncIssue,run.collectionIssue].filter(Boolean):data.accountFeedAt?[]:['等待首次采集'];
   const webPlatforms=[...new Set(data.options.map(item=>item.platform))].filter(item=>(!platform||item===platform)&&data.modes?.[item]==='web');
   if(webPlatforms.length)status.unshift(webPlatforms.join('、')+' 使用网页采集');
   if(run?.retryAt)status.push('可重试时间 '+time(run.retryAt));
   $('status').textContent=status.join(' · ')||'最近一轮采集已完成';
   $('last').textContent=data.accountFeedAt?'最近采集 '+time(data.accountFeedAt):'';
   $('post-count').textContent='共 '+posts.length+' 条';
+  const unknown=posts.filter(post=>post.media_type==='unknown').length;
+  $('media-note').textContent=unknown?unknown+' 条帖子类型待确认，仅计入全部':mediaType?mediaTypes[mediaType]+'帖子的独立统计':'图片与视频合并统计';
   const metrics=visibleMetrics();
   const keys=Object.keys(metrics);
   $('cards').classList.toggle('two',keys.length===2);
@@ -327,34 +368,36 @@ function render() {
   $('cards').replaceChildren(...Object.entries(metrics).map(([key,label])=>{
     const values=posts.map(post=>post[key]).filter(value=>value!=null);
     const card=element('article',null,'card');
-    card.append(element('span',label,'sub'),element('strong',format(values.length?values.reduce((a,b)=>a+b,0):null)),element('p','累计值 · '+values.length+'/'+posts.length+' 条有数据','note'));
+    card.append(element('span',label,'sub'),element('strong',format(values.length?values.reduce((a,b)=>a+b,0):posts.length?null:0)),element('p','累计值 · '+values.length+'/'+posts.length+' 条有数据','note'));
     return card;
   }));
   $('post-saves-column').hidden=!Object.hasOwn(metrics,'saves');
   $('post-views-column').hidden=!Object.hasOwn(metrics,'impressions');
   rows($('posts'),posts.map(post=>{
-    const title=postName(post);
-    const link=element('button',title,'post-link');
-    link.type='button';
-    link.title=title;
-    link.onclick=()=>{
-      const url=new URL(post.url);
-      if(url.protocol==='https:'||url.protocol==='http:') window.open(url.href,'_blank','noopener,noreferrer');
-    };
-    return [link,post.platform,time(post.published_at,localWithSeconds),
+    const detail=element('div',null,'post-detail');
+    appendPostThumbnail(detail,post.thumbnail_url,post.url);
+    detail.append(originalLink(post.url));
+    return [detail,post.platform,time(post.published_at,localWithSeconds),
       ...keys.map(key=>format(post[key])),
       post.source === 'web' ? '网页' : post.source === 'api' ? '接口' : '—',time(post.captured_at)];
-  }),5+keys.length,'暂无符合筛选条件的帖子');
+  }),5+keys.length,mediaType==='video'?'暂无视频帖子':mediaType==='image'?'暂无图片帖子':'暂无符合筛选条件的帖子');
   draw();
 }
 async function load() {
   const id=++requestId;
   switches($('platform-tabs'),platforms,platform,choosePlatform);
+  switches($('media-tabs'),mediaTypes,mediaType,key=>{
+    mediaType=key;
+    selectedPosts.clear();
+    useRecentPosts=true;
+    load();
+  });
   switches($('periods'),periods,unit,key=>{unit=key;load();});
   $('status').textContent='正在读取数据……';
   try {
     const query=new URLSearchParams({unit});
     if(platform) query.set('platform',platform);
+    if(mediaType) query.set('mediaType',mediaType);
     const {from:publishedFrom,to:publishedTo}=publishRange();
     const requestedRecent=useRecentPosts;
     query.set('postSelection',requestedRecent?'recent':'manual');
@@ -401,6 +444,16 @@ $('trend-filters').onreset=()=>{
   setTimeout(()=>{updateDateSelection();load();},0);
 };
 $('refresh').onclick=load;
+$('preview-close').onclick=()=>$('image-preview').close();
+$('image-preview').addEventListener('click',event=>{
+  if(event.target!==$('image-preview'))return;
+  const rect=event.target.getBoundingClientRect();
+  if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)event.target.close();
+});
+$('image-preview').addEventListener('close',()=>{
+  $('preview-image').removeAttribute('src');
+  $('preview-image').onerror=null;
+});
 draw();load();
 return draw;
 </script></body></html>

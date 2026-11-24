@@ -41,6 +41,14 @@ function accountPost(entry) {
   if (entry.id !== id) return null;
   return { id, platform: entry.platform, account: feed.handle, url: url.origin + url.pathname, title: capturedTitle(entry) };
 }
+function postMediaType(entry) {
+  if (['image', 'video'].includes(entry.mediaType)) return entry.mediaType;
+  if (typeof entry.url !== 'string' || !URL.canParse(entry.url)) return null;
+  const path = new URL(entry.url).pathname;
+  if (entry.platform === 'TikTok') return path.includes('/photo/') ? 'image' : path.includes('/video/') ? 'video' : null;
+  if (entry.platform === 'Instagram' && /\/(?:reel|reels|tv)\//.test(path)) return 'video';
+  return null;
+}
 async function getSetting(db, key) {
   const row = await db.prepare('SELECT value FROM settings WHERE key=?').bind(key).first();
   return row ? JSON.parse(row.value) : null;
@@ -281,13 +289,17 @@ async function dashboard(env, query) {
   }
   const platform = query.get('platform') || '';
   const account = query.get('account') || '';
+  const mediaType = query.get('mediaType') || '';
+  if (mediaType && !['image', 'video', 'unknown'].includes(mediaType)) {
+    return json({ error: '请选择有效的内容类型' }, 400);
+  }
   const filter = "p.active=1 AND (p.id LIKE 'x:%' OR p.id LIKE 'instagram:%' OR p.id LIKE 'tiktok:%')" +
     " AND (?='' OR p.platform=?) AND (?='' OR p.account=?)";
   const args = [platform, platform, account, account];
   const [{ results: posts }, { results: options }, run, accountFeedAt, { results: storedProfiles }] = await Promise.all([
     db.prepare(`SELECT p.*,s.impressions,s.likes,s.comments,s.saves,s.captured_at,s.source FROM posts p LEFT JOIN snapshots s
       ON s.post_id=p.id AND s.hour=(SELECT t.hour FROM snapshots t WHERE t.post_id=p.id AND t.hour<=? ORDER BY t.hour DESC LIMIT 1)
-      WHERE ${filter} ORDER BY p.published_at DESC, p.first_hour DESC, p.id`).bind(end, ...args).all(),
+      WHERE ${filter} AND (?='' OR p.media_type=?) ORDER BY p.published_at DESC, p.first_hour DESC, p.id`).bind(end, ...args, mediaType, mediaType).all(),
     db.prepare(`SELECT DISTINCT platform,account FROM posts p WHERE ${filter} ORDER BY platform,account`).bind('', '', '', '').all(),
     getSetting(db, 'run'),
     getSetting(db, 'accountFeedAt'),
@@ -326,7 +338,7 @@ async function dashboard(env, query) {
     ? await postTrend(db, windows, matchingPosts.map(post => post.id), start, end)
     : await followerTrend(db, profiles, windows, start, end);
   return json({ posts, options, run: status, trend, trendPostCount: matchingPosts.length,
-    trendPostIds: platform ? matchingPosts.map(post => post.id) : [], trendRecentOnly: recentOnly, unit, start, end, modes, profiles, accountFeedAt });
+    trendPostIds: platform ? matchingPosts.map(post => post.id) : [], trendRecentOnly: recentOnly, mediaType, unit, start, end, modes, profiles, accountFeedAt });
 }
 
 async function postTrend(db, windows, ids, start, end) {
@@ -432,7 +444,8 @@ async function saveWebSnapshot(request, env) {
   const entries = await request.json();
   if (!Array.isArray(entries) || !entries.length || entries.length > 50 ||
       entries.some(entry => typeof entry?.id !== 'string' || !entry.id ||
-        (!hasWebMetrics(entry) && !capturedTitle(entry) && !Number.isSafeInteger(entry.publishedAt) && !postThumbnail(entry.thumbnailUrl)))) return json({ error: '网页指标格式无效' }, 400);
+        (entry.mediaType != null && !['image', 'video', 'unknown'].includes(entry.mediaType)) ||
+        (!hasWebMetrics(entry) && !capturedTitle(entry) && !Number.isSafeInteger(entry.publishedAt) && !postThumbnail(entry.thumbnailUrl) && !postMediaType(entry)))) return json({ error: '网页指标格式无效' }, 400);
   const now = Date.now();
   const discovered = [];
   const metadata = [];
@@ -451,10 +464,11 @@ async function saveWebSnapshot(request, env) {
     const publishedAt = Number.isSafeInteger(entry.publishedAt) && entry.publishedAt > 0 && entry.publishedAt <= now
       ? entry.publishedAt : null;
     const thumbnailUrl = postThumbnail(entry.thumbnailUrl);
-    if (publishedAt != null || thumbnailUrl || (title && entry.url == null)) {
+    const mediaType = postMediaType(entry);
+    if (publishedAt != null || thumbnailUrl || mediaType || (title && entry.url == null)) {
       metadata.push(env.DB.prepare(`UPDATE posts SET title=coalesce(nullif(title,''),?),
-        published_at=coalesce(?,published_at),thumbnail_url=coalesce(?,thumbnail_url)
-        WHERE id=? AND active=1`).bind(title, publishedAt, thumbnailUrl, entry.id));
+        published_at=coalesce(?,published_at),thumbnail_url=coalesce(?,thumbnail_url),media_type=coalesce(?,media_type)
+        WHERE id=? AND active=1`).bind(title, publishedAt, thumbnailUrl, mediaType, entry.id));
     }
     if (!hasWebMetrics(entry)) continue;
     writes.push(env.DB.prepare(`INSERT INTO snapshots
@@ -494,6 +508,23 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
+      if (url.pathname === '/api/auto-collection' || url.pathname === '/api/auto-collection/run') {
+        const canManage = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && request.headers.get('x-dashboard-readonly') !== '1';
+        if (!['GET', 'POST'].includes(request.method)) return json({ error: '不支持的请求方式' }, 405);
+        if (request.method === 'POST' && (!canManage || request.headers.get('Origin') !== url.origin)) {
+          return json({ error: '请在本机页面修改自动采集设置' }, 403);
+        }
+        if (!env.COLLECT_TOKEN) return json({ error: '本机采集服务尚未配置' }, 503);
+        try {
+          const response = await fetch('http://127.0.0.1:8790/' + (url.pathname.endsWith('/run') ? 'run' : 'settings'), {
+            method: request.method,
+            headers: { Authorization: 'Bearer ' + env.COLLECT_TOKEN, 'Content-Type': 'application/json' },
+            body: request.method === 'POST' ? await request.text() : undefined,
+            signal: AbortSignal.timeout(5000),
+          });
+          return json({ ...await response.json(), canManage }, response.status);
+        } catch { return json({ error: '本机自动采集服务未运行，请先运行 npm run collector' }, 503); }
+      }
       if (request.method === 'GET' && url.pathname === '/') {
         return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
       }
