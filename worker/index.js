@@ -417,6 +417,14 @@ function hasWebMetrics(entry) {
     (entry.id.startsWith('tiktok:') && count(entry.saves) != null);
 }
 
+function postThumbnail(value) {
+  if (typeof value !== 'string' || value.length > 4096) return null;
+  const url = URL.parse(value);
+  if (!url || url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+  return /^(?:[\w-]+\.)*(?:twimg\.com|cdninstagram\.com|fbcdn\.net|tiktokcdn(?:-[\w-]+)?\.com|tiktokv\.com|byteoversea\.com|ibytedtos\.com)$/i.test(url.hostname)
+    ? url.href : null;
+}
+
 async function saveWebSnapshot(request, env) {
   if (!env.COLLECT_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.COLLECT_TOKEN) {
     return json({ error: '未授权' }, 403);
@@ -424,7 +432,7 @@ async function saveWebSnapshot(request, env) {
   const entries = await request.json();
   if (!Array.isArray(entries) || !entries.length || entries.length > 50 ||
       entries.some(entry => typeof entry?.id !== 'string' || !entry.id ||
-        (!hasWebMetrics(entry) && !capturedTitle(entry) && !Number.isSafeInteger(entry.publishedAt)))) return json({ error: '网页指标格式无效' }, 400);
+        (!hasWebMetrics(entry) && !capturedTitle(entry) && !Number.isSafeInteger(entry.publishedAt) && !postThumbnail(entry.thumbnailUrl)))) return json({ error: '网页指标格式无效' }, 400);
   const now = Date.now();
   const discovered = [];
   const metadata = [];
@@ -442,9 +450,11 @@ async function saveWebSnapshot(request, env) {
     const title = capturedTitle(entry);
     const publishedAt = Number.isSafeInteger(entry.publishedAt) && entry.publishedAt > 0 && entry.publishedAt <= now
       ? entry.publishedAt : null;
-    if (publishedAt != null || (title && entry.url == null)) {
+    const thumbnailUrl = postThumbnail(entry.thumbnailUrl);
+    if (publishedAt != null || thumbnailUrl || (title && entry.url == null)) {
       metadata.push(env.DB.prepare(`UPDATE posts SET title=coalesce(nullif(title,''),?),
-        published_at=coalesce(?,published_at) WHERE id=? AND active=1`).bind(title, publishedAt, entry.id));
+        published_at=coalesce(?,published_at),thumbnail_url=coalesce(?,thumbnail_url)
+        WHERE id=? AND active=1`).bind(title, publishedAt, thumbnailUrl, entry.id));
     }
     if (!hasWebMetrics(entry)) continue;
     writes.push(env.DB.prepare(`INSERT INTO snapshots

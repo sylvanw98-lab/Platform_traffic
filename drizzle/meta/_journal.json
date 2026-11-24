@@ -43,6 +43,13 @@
       "when": 1795426800000,
       "tag": "0005_post_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795482000000,
+      "tag": "0006_post_thumbnail",
+      "breakpoints": true
     }
   ]
 }

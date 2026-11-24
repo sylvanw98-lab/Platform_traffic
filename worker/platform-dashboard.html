@@ -14,6 +14,7 @@
 .publication-time{color:#6b7280}
 .trend-mode{display:inline-flex;margin-top:12px}
 .metric-series:not(.post-comparison){flex-direction:row;flex-wrap:wrap;gap:6px 16px}.metric-series li{display:inline-flex;align-items:center;gap:6px;border-left:0;padding-left:0}.metric-series i{width:9px;height:9px;border-radius:50%;flex:none}
+.post-comparison img{width:48px;height:48px;flex:none;object-fit:cover;border-radius:5px}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -116,7 +117,17 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
       const dot=element('i');
       dot.style.backgroundColor=post.color;
       dot.setAttribute('aria-hidden','true');
-      item.append(dot,element('span',post.title));
+      item.append(dot);
+      if(compare && post.thumbnailUrl){
+        const image=element('img');
+        image.alt='';
+        image.loading='lazy';
+        image.referrerPolicy='no-referrer';
+        image.onerror=()=>image.remove();
+        image.src=post.thumbnailUrl;
+        item.append(image);
+      }
+      item.append(element('span',post.title));
       legend.append(item);
     }
     card.append(legend);
@@ -218,7 +229,7 @@ function draw() {
     if(!selected.has(post.id))continue;
     const title=postName(post),publishedAt=post.published_at;
     series.set(post.id,{title,lines:new Map(activeMetrics.map(key=>[key,{
-      title:trendMode==='all'?title:names[key],publishedAt,metricName:names[key],
+      title:trendMode==='all'?title:names[key],publishedAt,metricName:names[key],thumbnailUrl:post.thumbnail_url,
       color:trendMode==='all'?seriesColors[series.size%seriesColors.length]:metricColors[key],points:[],
     }]))});
   }
