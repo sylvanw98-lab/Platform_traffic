@@ -109,17 +109,13 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
     card.append(element('p','发布时间：'+time(publishedAt,localWithSeconds),'note publication-time'));
   }
   if((compare||series.length>1) && series.length){
-    const legend=element('ul',null,compare?'comparison-series note':'comparison-series metric-series note');
+    const legend=element('ul',null,'comparison-series metric-series note');
     for(const post of series){
-      const item=element('li',compare?post.title:null);
-      if(compare){
-        item.style.borderColor=post.color;
-      }else{
-        const dot=element('i');
-        dot.style.backgroundColor=post.color;
-        dot.setAttribute('aria-hidden','true');
-        item.append(dot,element('span',post.title));
-      }
+      const item=element('li');
+      const dot=element('i');
+      dot.style.backgroundColor=post.color;
+      dot.setAttribute('aria-hidden','true');
+      item.append(dot,element('span',post.title));
       legend.append(item);
     }
     card.append(legend);
