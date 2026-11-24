@@ -51,6 +51,8 @@ const format = number => number == null ? '暂无数据' : fmt.format(number);
 const time = (value,formatter=local) => value ? formatter.format(value) : '暂无记录';
 const trendModes={all:'全部',single:'单个'};
 let trendMode='all';
+const singleMetrics=new Set(['impressions','likes','comments']);
+const metricColors={impressions:'#17694f',likes:'#a44075',comments:'#365dab',saves:'#9b5425'};
 let unit = 'day', metric = platform==='Instagram'?'likes':'impressions', data, requestId = 0;
 
 function visibleMetrics() {
@@ -105,7 +107,7 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
     const publishedAt=series[0].publishedAt;
     card.append(element('p','发布时间：'+time(publishedAt,localWithSeconds),'note publication-time'));
   }
-  if(compare && series.length){
+  if((compare||series.length>1) && series.length){
     const legend=element('ul',null,'comparison-series note');
     for(const post of series){
       const item=element('li',post.title);
@@ -160,9 +162,9 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
   const tooltip=svgEl('g',{visibility:'hidden','pointer-events':'none','aria-hidden':'true'});
   const background=svgEl('rect',{height:24,rx:4,fill:'#fff',stroke:'#cbd8ce'},null,tooltip);
   const tooltipText=svgEl('text',{x:8,y:16},null,tooltip);
-  for(const point of series.flatMap(post=>post.points)){
+  for(const point of series.flatMap(line=>line.points.map(point=>({...point,label:line.metricName||metricName})))){
     const cx=x(point.index),cy=y(point.value);
-    const label=metricName+'：'+format(point.value);
+    const label=point.label+'：'+format(point.value);
     const hit=svgEl('circle',{cx,cy,r:10,fill:'transparent','aria-label':label},null,targets);
     hit.addEventListener('pointerenter',()=>{
       tooltipText.textContent=label;
@@ -182,23 +184,48 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
 function draw() {
   const names=visibleMetrics();
   switches($('trend-mode'),trendModes,trendMode,key=>{trendMode=key;draw();});
-  switches($('legend'),names,metric,key=>{metric=key;draw();});
+  if(trendMode==='all'){
+    switches($('legend'),names,metric,key=>{metric=key;draw();});
+  }else{
+    $('legend').replaceChildren();
+    for(const [key,label] of Object.entries(names)){
+      const button=element('button',label);
+      button.type='button';
+      button.setAttribute('aria-pressed',singleMetrics.has(key));
+      button.onclick=()=>{
+        if(singleMetrics.has(key))singleMetrics.delete(key);
+        else singleMetrics.add(key);
+        draw();
+        [...$('legend').children].find(item=>item.textContent===label)?.focus();
+      };
+      $('legend').append(button);
+    }
+  }
+  const activeMetrics=trendMode==='all'?[metric]:Object.keys(names).filter(key=>singleMetrics.has(key));
+  if(!activeMetrics.length){
+    $('plot').replaceChildren(element('p','请选择要显示的指标','empty'));
+    return;
+  }
   const trend=data?.trend||[];
   const series=new Map();
   const selected=new Set(data?.trendPostIds||[]);
   for(const post of data?.posts||[]){
-    if(selected.has(post.id))series.set(post.id,{title:postName(post),publishedAt:post.published_at,
-      color:seriesColors[series.size%seriesColors.length],points:[]});
+    if(!selected.has(post.id))continue;
+    const title=postName(post),publishedAt=post.published_at;
+    series.set(post.id,{title,lines:new Map(activeMetrics.map(key=>[key,{
+      title:trendMode==='all'?title:names[key],publishedAt,metricName:names[key],
+      color:trendMode==='all'?seriesColors[series.size%seriesColors.length]:metricColors[key],points:[],
+    }]))});
   }
   let postMax=1;
   for(const [index,period] of trend.entries()){
     for(const item of period.readings){
       const post=series.get(item.id);
       if(!post)continue;
-      if(item[metric]!=null){
-        const metricValue=item[metric];
-        post.points.push({index,value:metricValue});
-        postMax=Math.max(postMax,metricValue);
+      for(const [key,line] of post.lines){
+        if(item[key]==null)continue;
+        line.points.push({index,value:item[key]});
+        postMax=Math.max(postMax,item[key]);
       }
     }
   }
@@ -206,8 +233,9 @@ function draw() {
   const matched=[...series.values()];
   const title=data?.trendRecentOnly&&matched.length?'近 '+matched.length+' 条数据':'帖子对比';
   const charts=trendMode==='all'
-    ? [interactionChart(title,matched,trend,metricName,postMax,true)]
-    : [...series.values()].map(post=>interactionChart(post.title,[post],trend,metricName,postMax));
+    ? [interactionChart(title,matched.map(post=>post.lines.get(metric)),trend,metricName,postMax,true)]
+    : matched.map(post=>interactionChart(post.title,[...post.lines.values()],trend,
+      activeMetrics.map(key=>names[key]).join('、'),postMax));
   $('plot').replaceChildren(...(charts.length?charts:[element('p','暂无符合筛选条件的帖子','empty')]));
 }
 function postName(post) {
