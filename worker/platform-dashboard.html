@@ -13,7 +13,7 @@
 .comparison-series{display:flex;flex-direction:column;gap:6px;padding:0;margin:6px 0;list-style:none}.comparison-series li{border-left:4px solid;padding-left:7px;overflow-wrap:anywhere}
 .publication-time{color:#6b7280}
 .trend-mode{display:inline-flex;margin-top:12px}
-.metric-series{flex-direction:row;flex-wrap:wrap;gap:6px 16px}.metric-series li{display:inline-flex;align-items:center;gap:6px;border-left:0;padding-left:0}.metric-series i{width:9px;height:9px;border-radius:50%;flex:none}
+.metric-series:not(.post-comparison){flex-direction:row;flex-wrap:wrap;gap:6px 16px}.metric-series li{display:inline-flex;align-items:center;gap:6px;border-left:0;padding-left:0}.metric-series i{width:9px;height:9px;border-radius:50%;flex:none}
 </style></head>
 <body><header><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>社媒数据</header>
 <main>
@@ -110,6 +110,7 @@ function interactionChart(title,series,trend,metricName,max,compare=false) {
   }
   if((compare||series.length>1) && series.length){
     const legend=element('ul',null,'comparison-series metric-series note');
+    if(compare)legend.classList.add('post-comparison');
     for(const post of series){
       const item=element('li');
       const dot=element('i');
